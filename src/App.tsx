@@ -1,3 +1,7 @@
+import { money, number, percent, ledgerDate, localDateISO, financialText } from './i18n/format';
+import { LanguageSelector } from './components/LanguageSelector';
+import { useTranslation } from 'react-i18next';
+import { t } from './i18n';
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { onAuthStateChanged, reload, sendEmailVerification, signOut } from 'firebase/auth';
@@ -27,7 +31,7 @@ import {
 import { auth, configurationError, db, usingEmulators } from './services/firebase';
 import { leaveLedger, newRecordId, writeFinancial } from './services/ledger';
 import { errorMessage } from './services/errors';
-import { balances, changedFields, money, settlements } from './domain/finance';
+import { balances, changedFields, settlements } from './domain/finance';
 import type {
   AuditEvent,
   FinancialData,
@@ -50,6 +54,7 @@ import { initializeGoogleProfile } from './services/googleAuth';
 import { strings } from './strings';
 type Page = keyof typeof strings.nav;
 function Empty({ title, children }: { title: string; children: ReactNode }) {
+  useTranslation();
   return (
     <div className="empty">
       <div className="empty-icon">
@@ -61,9 +66,10 @@ function Empty({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 function nameOf(l: Ledger, id: string) {
-  return l.members[id]?.name || 'Former member';
+  return l.members[id]?.name || t('Former member');
 }
 function AppContent({ user }: { user: User }) {
+  useTranslation();
   const ledgerState = useLive<Ledger>(`ledgers:${user.uid}`, () =>
     query(collection(db!, 'ledgers'), where('memberIds', 'array-contains', user.uid)),
   );
@@ -77,7 +83,7 @@ function AppContent({ user }: { user: User }) {
     lid ? collection(db!, 'ledgers', lid, 'records') : null,
   );
   const [historyLimit, setHistoryLimit] = useState(100);
-  const auditState = useLive<AuditEvent>(lid ? `audit:${lid}:${historyLimit}` : '', () =>
+  const auditState = useLive<AuditEvent>(lid ? `audit:${lid}:${number(historyLimit)}` : '', () =>
     lid
       ? query(collection(db!, 'ledgers', lid, 'audit'), orderBy('at', 'desc'), limit(historyLimit))
       : null,
@@ -91,7 +97,7 @@ function AppContent({ user }: { user: User }) {
   const [detail, setDetail] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{
     title: string;
-    body: string;
+    body: string | (() => string);
     run: () => Promise<void>;
   } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -145,7 +151,7 @@ function AppContent({ user }: { user: User }) {
         (filter === 'deleted'
           ? r.data.deleted
           : !r.data.deleted && (filter === 'active' || r.data.kind === filter)) &&
-        `${r.data.description} ${r.data.notes} ${ledger ? nameOf(ledger, r.data.payerId) : ''}`
+        `${financialText(r.data, 'description')} ${r.data.notes} ${ledger ? nameOf(ledger, r.data.payerId) : ''}`
           .toLowerCase()
           .includes(search.toLowerCase()),
     )
@@ -211,7 +217,15 @@ function AppContent({ user }: { user: User }) {
     const fallback = id.length > 100 ? newRecordId(db!, lid) : id;
     setConfirm({
       title: 'Confirm money was paid',
-      body: `Record ${money(s.amount, snapshot.currency)} paid by ${nameOf(snapshot, s.payerId)} to ${nameOf(snapshot, s.receiverId)}? Confirm only after the actual transfer.`,
+      body: () =>
+        t(
+          'Record {{amount}} paid by {{payer}} to {{receiver}}? Confirm only after the actual transfer.',
+          {
+            amount: money(s.amount, snapshot.currency),
+            payer: nameOf(snapshot, s.payerId),
+            receiver: nameOf(snapshot, s.receiverId),
+          },
+        ),
       run: () =>
         writeFinancial(db!, {
           ledgerId: lid,
@@ -225,7 +239,7 @@ function AppContent({ user }: { user: User }) {
             description: 'Settlement payment',
             amount: s.amount,
             currency: snapshot.currency,
-            date: new Date().toLocaleDateString('en-CA'),
+            date: localDateISO(),
             payerId: s.payerId,
             receiverId: s.receiverId,
             participants: [],
@@ -244,12 +258,12 @@ function AppContent({ user }: { user: User }) {
       <table>
         <thead>
           <tr>
-            <th>Transaction</th>
-            <th>Date</th>
-            <th>Paid by</th>
-            <th className="right">Amount</th>
+            <th>{t('Transaction')}</th>
+            <th>{t('Date')}</th>
+            <th>{t('Paid by')}</th>
+            <th className="right">{t('Amount')}</th>
             <th>
-              <span className="sr-only">View</span>
+              <span className="sr-only">{t('View')}</span>
             </th>
           </tr>
         </thead>
@@ -268,19 +282,24 @@ function AppContent({ user }: { user: User }) {
                     )}
                   </span>
                   <span>
-                    <strong>{r.data.description}</strong>
+                    <strong>{financialText(r.data, 'description')}</strong>
                     <small>
-                      {r.data.deleted ? 'Deleted · ' : ''}
+                      {r.data.deleted ? t('Deleted ·') + ' ' : ''}
                       {r.data.kind === 'expense'
-                        ? `${r.data.participants.length} people · ${r.data.splitMethod} split`
+                        ? t('{{value0}} people · {{value1}} split', {
+                            value0: number(r.data.participants.length),
+                            value1: t(r.data.splitMethod),
+                          })
                         : r.data.kind === 'loan'
-                          ? `Loan to ${nameOf(ledger!, r.data.receiverId)}`
-                          : `Repayment to ${nameOf(ledger!, r.data.receiverId)}`}
+                          ? t('Loan to {{value0}}', { value0: nameOf(ledger!, r.data.receiverId) })
+                          : t('Repayment to {{value0}}', {
+                              value0: nameOf(ledger!, r.data.receiverId),
+                            })}
                     </small>
                   </span>
                 </button>
               </td>
-              <td className="date-cell">{r.data.date}</td>
+              <td className="date-cell">{ledgerDate(r.data.date)}</td>
               <td>
                 <span className="person-inline">
                   <Avatar name={nameOf(ledger!, r.data.payerId)} small />
@@ -291,7 +310,9 @@ function AppContent({ user }: { user: User }) {
               <td>
                 <button
                   className="icon-button"
-                  aria-label={`View ${r.data.description}`}
+                  aria-label={t('View {{value0}}', {
+                    value0: financialText(r.data, 'description'),
+                  })}
                   onClick={() => setDetail(r.id)}
                 >
                   <ArrowUpRight size={17} />
@@ -302,10 +323,12 @@ function AppContent({ user }: { user: User }) {
         </tbody>
       </table>
       {!rows.length && (
-        <Empty title={compact ? 'Your first shared moment starts here.' : 'No transactions found.'}>
+        <Empty
+          title={compact ? t('Your first shared moment starts here.') : t('No transactions found.')}
+        >
           {compact
-            ? 'Add an expense and we’ll take care of the split.'
-            : 'Try another filter, or add your first transaction.'}
+            ? t('Add an expense and we’ll take care of the split.')
+            : t('Try another filter, or add your first transaction.')}
         </Empty>
       )}
     </div>
@@ -322,10 +345,12 @@ function AppContent({ user }: { user: User }) {
             </div>
             <div className="transfer-text">
               <strong>
-                {nameOf(ledger!, s.payerId)} <span className="muted">pays</span>{' '}
+                {nameOf(ledger!, s.payerId)} <span className="muted">{t('pays')}</span>{' '}
                 {nameOf(ledger!, s.receiverId)}
               </strong>
-              <small>{compact ? 'Suggested transfer' : 'Recommendation · not yet paid'}</small>
+              <small>
+                {compact ? t('Suggested transfer') : t('Recommendation · not yet paid')}
+              </small>
             </div>
             <strong className="amount">{money(s.amount, ledger!.currency)}</strong>
             {!compact && (
@@ -334,7 +359,7 @@ function AppContent({ user }: { user: User }) {
                 disabled={!online || busy}
                 onClick={() => settle(s)}
               >
-                Confirm paid
+                {t('Confirm paid')}
               </button>
             )}
           </div>
@@ -342,13 +367,14 @@ function AppContent({ user }: { user: User }) {
       ) : (
         <div className="all-settled">
           <CheckCircle2 size={30} />
-          <h3>All square.</h3>
-          <p>No transfers needed. That’s a good feeling.</p>
+          <h3>{t('All square.')}</h3>
+          <p>{t('No transfers needed. That’s a good feeling.')}</p>
         </div>
       )}
       {compact && plan.length > 0 && (
         <button className="text-link" onClick={() => setPage('balances')}>
-          View settlement plan <ArrowRight size={15} />
+          {t('View settlement plan') + ' '}
+          <ArrowRight size={15} />
         </button>
       )}
     </>
@@ -371,7 +397,7 @@ function AppContent({ user }: { user: User }) {
         </a>
         <div className="ledger-switch">
           <label className="eyebrow" htmlFor="ledger-picker">
-            YOUR SHARED SPACE
+            {t('YOUR SHARED SPACE')}
           </label>
           <div className="ledger-select">
             <span className="ledger-mini">
@@ -379,11 +405,11 @@ function AppContent({ user }: { user: User }) {
             </span>
             <select
               id="ledger-picker"
-              aria-label="Selected ledger"
+              aria-label={t('Selected ledger')}
               value={lid}
               onChange={(e) => selectLedger(e.target.value)}
             >
-              {!ledger && <option value="">No ledgers yet</option>}
+              {!ledger && <option value="">{t('No ledgers yet')}</option>}
               {ledgerState.items.map((l) => (
                 <option key={l.id} value={l.id}>
                   {l.name}
@@ -393,10 +419,10 @@ function AppContent({ user }: { user: User }) {
             <ChevronDown size={14} />
           </div>
           <button className="new-group" onClick={() => setNewLedger(true)}>
-            <Plus size={14} /> Create a ledger
+            <Plus size={14} /> {' ' + t('Create a ledger')}
           </button>
         </div>
-        <nav aria-label="Main navigation">
+        <nav aria-label={t('Main navigation')}>
           {(Object.keys(strings.nav) as Page[]).map((p) => {
             const Icon = {
               dashboard: LayoutDashboard,
@@ -413,10 +439,10 @@ function AppContent({ user }: { user: User }) {
                 onClick={() => setPage(p)}
               >
                 <Icon size={19} />
-                {strings.nav[p]}
+                {t(strings.nav[p])}
                 {p === 'expenses' && expenses.length > 0 && (
                   <span className="nav-count" aria-hidden="true">
-                    {expenses.length}
+                    {number(expenses.length)}
                   </span>
                 )}
               </button>
@@ -426,13 +452,14 @@ function AppContent({ user }: { user: User }) {
         <div className="sidebar-bottom">
           <div className="privacy-note">
             <span className="privacy-dot" />
-            Just between your people.<small>Private by design. Clear by nature.</small>
+            {t('Just between your people.')}
+            <small>{t('Private by design. Clear by nature.')}</small>
           </div>
           <button className="profile-button" onClick={() => setProfile(true)}>
-            <Avatar name={user.displayName || 'You'} />
+            <Avatar name={user.displayName || t('You')} />
             <span>
-              <strong>{user.displayName || 'Your account'}</strong>
-              <small>Account & profile</small>
+              <strong>{user.displayName || t('Your account')}</strong>
+              <small>{t('Account & profile')}</small>
             </span>
             <Settings size={16} />
           </button>
@@ -440,23 +467,25 @@ function AppContent({ user }: { user: User }) {
             className="logout"
             onClick={() => void signOut(auth!).catch((e) => setError(errorMessage(e)))}
           >
-            <LogOut size={15} /> Sign out
+            <LogOut size={15} /> {' ' + t('Sign out')}
           </button>
         </div>
       </aside>
       <div className="main-layout">
         <header className="topbar">
           <div className="breadcrumbs">
-            Your ledgers <span>/</span> <strong>{ledger?.name || 'Getting started'}</strong>
+            {t('Your ledgers') + ' '}
+            <span>/</span> <strong>{ledger?.name || t('Getting started')}</strong>
           </div>
           <div className="topbar-meta">
+            <LanguageSelector />
             <span className={`connection ${!online || recordsState.cached ? 'offline' : ''}`}>
               <i />
               {!online
-                ? 'Offline · changes not saved'
+                ? t('Offline · changes not saved')
                 : recordsState.cached && lid
-                  ? 'Connecting…'
-                  : 'Live updates'}
+                  ? t('Connecting…')
+                  : t('Live updates')}
             </span>
             {ledger && <span className="currency-chip">{ledger.currency}</span>}
           </div>
@@ -465,19 +494,21 @@ function AppContent({ user }: { user: User }) {
           <div className="page-heading">
             <div>
               <span className="eyebrow">
-                {page === 'dashboard' ? 'THE BIG PICTURE' : strings.nav[page].toUpperCase()}
+                {page === 'dashboard' ? t('THE BIG PICTURE') : t(strings.nav[page]).toUpperCase()}
               </span>
-              <h1>{strings.headings[page]}</h1>
+              <h1>{t(strings.headings[page])}</h1>
               <p className="muted">
                 {page === 'dashboard'
-                  ? `Here’s where things stand${ledger ? ` in ${ledger.name}` : ''}.`
+                  ? ledger
+                    ? t('Here’s where things stand in {{ledger}}.', { ledger: ledger.name })
+                    : t('Here’s where things stand.')
                   : page === 'expenses'
-                    ? 'The little things add up. Keep them all in one place.'
+                    ? t('The little things add up. Keep them all in one place.')
                     : page === 'balances'
-                      ? 'Fewer transfers. A fresh start for everyone.'
+                      ? t('Fewer transfers. A fresh start for everyone.')
                       : page === 'activity'
-                        ? 'A shared record you can always come back to.'
-                        : 'A few details that keep everyone on the same page.'}
+                        ? t('A shared record you can always come back to.')
+                        : t('A few details that keep everyone on the same page.')}
               </p>
             </div>
             {ledger && page !== 'settings' && (
@@ -487,18 +518,18 @@ function AppContent({ user }: { user: User }) {
                 onClick={() => setForm({ kind: page === 'balances' ? 'repayment' : 'expense' })}
               >
                 <Plus size={18} />
-                {page === 'balances' ? 'Record repayment' : 'Add expense'}
+                {page === 'balances' ? t('Record repayment') : t('Add expense')}
               </button>
             )}
           </div>
           {usingEmulators && (
             <div className="emulator-strip">
-              LOCAL EMULATOR · isolated test data · no production Firebase connection
+              {t('LOCAL EMULATOR · isolated test data · no production Firebase connection')}
             </div>
           )}
           {!user.emailVerified && (
             <div className="verification-note">
-              <span>Verify your email to accept invitations.</span>
+              <span>{t('Verify your email to accept invitations.')}</span>
               <button
                 onClick={() =>
                   void action(
@@ -507,7 +538,7 @@ function AppContent({ user }: { user: User }) {
                   )
                 }
               >
-                Send verification email
+                {t('Send verification email')}
               </button>
               <button
                 onClick={() =>
@@ -521,35 +552,37 @@ function AppContent({ user }: { user: User }) {
                   }, 'Email verified. You can now accept invitations.')
                 }
               >
-                Refresh verification
+                {t('Refresh verification')}
               </button>
             </div>
           )}
           {notice && (
             <div className="alert success toast" role="status">
               <Check size={17} />
-              {notice}
-              <button aria-label="Dismiss notification" onClick={() => setNotice('')}>
+              {t(notice)}
+              <button aria-label={t('Dismiss notification')} onClick={() => setNotice('')}>
                 <X size={15} />
               </button>
             </div>
           )}
           {(error || ledgerState.error || recordsState.error || calculationError) && (
             <div className="alert error" role="alert">
-              {error || ledgerState.error || recordsState.error || calculationError}
+              {t(error || ledgerState.error || recordsState.error || calculationError || '')}
             </div>
           )}
           {loading ? (
             <div className="loading">
               <span className="spinner" />
-              {online ? 'Getting your ledger ready…' : 'Offline — reconnect to load your ledger.'}
+              {online
+                ? t('Getting your ledger ready…')
+                : t('Offline — reconnect to load your ledger.')}
             </div>
           ) : recordsState.error || calculationError ? (
-            <Empty title="Ledger data is unavailable.">
-              <span>Reconnect to load verified balances.</span>
+            <Empty title={t('Ledger data is unavailable.')}>
+              <span>{t('Reconnect to load verified balances.')}</span>
               <br />
               <button className="secondary" onClick={() => window.location.reload()}>
-                Reconnect
+                {t('Reconnect')}
               </button>
             </Empty>
           ) : !ledger ? (
@@ -557,19 +590,19 @@ function AppContent({ user }: { user: User }) {
               <div className="welcome-art">
                 <Layers3 size={66} />
               </div>
-              <span className="eyebrow">A CLEAN SLATE</span>
-              <h2>Sharing starts with a space.</h2>
+              <span className="eyebrow">{t('A CLEAN SLATE')}</span>
+              <h2>{t('Sharing starts with a space.')}</h2>
               <p>
-                Create a ledger for your roommates, your next trip,
+                {t('Create a ledger for your roommates, your next trip,')}
                 <br />
-                or simply the people you split things with.
+                {t('or simply the people you split things with.')}
               </p>
               <button className="primary" onClick={() => setNewLedger(true)}>
                 <Plus size={18} />
-                Create your first ledger
+                {t('Create your first ledger')}
               </button>
               <p className="field-help">
-                Have an invitation? Open the link your friend shared with you.
+                {t('Have an invitation? Open the link your friend shared with you.')}
               </p>
             </section>
           ) : (
@@ -579,7 +612,7 @@ function AppContent({ user }: { user: User }) {
                   <section className="summary-grid">
                     <div className="personal-card">
                       <div className="card-top">
-                        <span>YOUR NET BALANCE</span>
+                        <span>{t('YOUR NET BALANCE')}</span>
                         <ArrowUpRight size={20} />
                       </div>
                       <div className="big-amount">
@@ -588,39 +621,43 @@ function AppContent({ user }: { user: User }) {
                       </div>
                       <p>
                         {(net[user.uid] || 0) > 0
-                          ? 'You’re owed. We’ll help make things even.'
+                          ? t('You’re owed. We’ll help make things even.')
                           : (net[user.uid] || 0) < 0
-                            ? 'You owe. A little settling goes a long way.'
-                            : 'You’re all settled up. Nice and easy.'}
+                            ? t('You owe. A little settling goes a long way.')
+                            : t('You’re all settled up. Nice and easy.')}
                       </p>
                       <div className="personal-footer">
                         <span className="light-dot" />
                         {(net[user.uid] || 0) >= 0
-                          ? 'A clearer picture, for everyone.'
-                          : 'See your next steps in the settlement plan.'}
+                          ? t('A clearer picture, for everyone.')
+                          : t('See your next steps in the settlement plan.')}
                       </div>
                     </div>
                     <div className="stat-card">
                       <span className="stat-icon">
                         <Receipt size={21} />
                       </span>
-                      <span className="eyebrow">TOTAL SHARED SPENDING</span>
+                      <span className="eyebrow">{t('TOTAL SHARED SPENDING')}</span>
                       <strong>{money(spending, ledger.currency)}</strong>
                       <p>
-                        Across {expenses.length} shared{' '}
-                        {expenses.length === 1 ? 'expense' : 'expenses'}
+                        {t('Across {{countText}} shared expenses', {
+                          countText: number(expenses.length),
+                        })}
                       </p>
-                      <span className="stat-foot">All time · {ledger.currency}</span>
+                      <span className="stat-foot">
+                        {t('All time ·') + ' '}
+                        {ledger.currency}
+                      </span>
                     </div>
                     <div className="stat-card">
                       <span className="stat-icon peach">
                         <Users size={21} />
                       </span>
-                      <span className="eyebrow">IN THIS TOGETHER</span>
+                      <span className="eyebrow">{t('IN THIS TOGETHER')}</span>
                       <strong>
-                        {ledger.memberIds.length}{' '}
+                        {number(ledger.memberIds.length)}{' '}
                         <span className="unit">
-                          {ledger.memberIds.length === 1 ? 'member' : 'members'}
+                          {ledger.memberIds.length === 1 ? t('member') : t('members')}
                         </span>
                       </strong>
                       <div className="avatar-stack">
@@ -629,7 +666,8 @@ function AppContent({ user }: { user: User }) {
                         ))}
                       </div>
                       <button className="text-link stat-foot" onClick={() => setPage('settings')}>
-                        Meet your group <ArrowRight size={14} />
+                        {t('Meet your group') + ' '}
+                        <ArrowRight size={14} />
                       </button>
                     </div>
                   </section>
@@ -637,11 +675,12 @@ function AppContent({ user }: { user: User }) {
                     <section className="panel">
                       <div className="panel-heading">
                         <div>
-                          <h2>Recent activity</h2>
-                          <p>The latest things you’ve shared.</p>
+                          <h2>{t('Recent activity')}</h2>
+                          <p>{t('The latest things you’ve shared.')}</p>
                         </div>
                         <button className="text-link" onClick={() => setPage('expenses')}>
-                          View all <ArrowRight size={15} />
+                          {t('View all') + ' '}
+                          <ArrowRight size={15} />
                         </button>
                       </div>
                       {renderTable(recent.slice(0, 5), true)}
@@ -649,26 +688,28 @@ function AppContent({ user }: { user: User }) {
                     <section className="panel settlement-panel">
                       <div className="panel-heading">
                         <div>
-                          <span className="eyebrow">THE WAY TO EVEN</span>
-                          <h2>Settle with ease.</h2>
-                          <p>A simpler plan for your group.</p>
+                          <span className="eyebrow">{t('THE WAY TO EVEN')}</span>
+                          <h2>{t('Settle with ease.')}</h2>
+                          <p>{t('A simpler plan for your group.')}</p>
                         </div>
                       </div>
                       {renderPlan(true)}
                       <div className="plan-note">
                         <CircleHelp size={15} />
                         <span>
-                          Suggestions only. Confirm a payment after money actually changes hands.
+                          {t(
+                            'Suggestions only. Confirm a payment after money actually changes hands.',
+                          )}
                         </span>
                       </div>
                     </section>
                   </div>
                   <div className="bottom-note">
                     <Layers3 size={17} />
-                    <span>Less keeping score. More making memories.</span>
+                    <span>{t('Less keeping score. More making memories.')}</span>
                     <span className="reconciled">
                       <CheckCircle2 size={14} />
-                      Balances reconcile to zero
+                      {t('Balances reconcile to zero')}
                     </span>
                   </div>
                 </>
@@ -679,31 +720,31 @@ function AppContent({ user }: { user: User }) {
                     <div className="search-box">
                       <Search size={17} />
                       <input
-                        aria-label="Search transactions"
-                        placeholder="Search expenses, people, notes…"
+                        aria-label={t('Search transactions')}
+                        placeholder={t('Search expenses, people, notes…')}
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                       />
                     </div>
                     <select
-                      aria-label="Filter transactions"
+                      aria-label={t('Filter transactions')}
                       value={filter}
                       onChange={(e) => setFilter(e.target.value)}
                     >
-                      <option value="active">All active transactions</option>
-                      <option value="expense">Expenses</option>
-                      <option value="loan">Direct loans</option>
-                      <option value="repayment">Repayments</option>
-                      <option value="deleted">Deleted transactions</option>
+                      <option value="active">{t('All active transactions')}</option>
+                      <option value="expense">{t('Expenses')}</option>
+                      <option value="loan">{t('Direct loans')}</option>
+                      <option value="repayment">{t('Repayments')}</option>
+                      <option value="deleted">{t('Deleted transactions')}</option>
                     </select>
                     <select
-                      aria-label="Sort transactions"
+                      aria-label={t('Sort transactions')}
                       value={sort}
                       onChange={(e) => setSort(e.target.value)}
                     >
-                      <option value="newest">Newest first</option>
-                      <option value="oldest">Oldest first</option>
-                      <option value="amount">Highest amount</option>
+                      <option value="newest">{t('Newest first')}</option>
+                      <option value="oldest">{t('Oldest first')}</option>
+                      <option value="amount">{t('Highest amount')}</option>
                     </select>
                   </div>
                   {renderTable(filtered)}
@@ -715,8 +756,8 @@ function AppContent({ user }: { user: User }) {
                     <section className="panel">
                       <div className="panel-heading">
                         <div>
-                          <h2>Where everyone stands</h2>
-                          <p>Positive means owed. Negative means owing.</p>
+                          <h2>{t('Where everyone stands')}</h2>
+                          <p>{t('Positive means owed. Negative means owing.')}</p>
                         </div>
                         <span className="pill">{ledger.currency}</span>
                       </div>
@@ -727,14 +768,14 @@ function AppContent({ user }: { user: User }) {
                             <div>
                               <strong>
                                 {m.name}
-                                {id === user.uid ? ' (you)' : ''}
+                                {id === user.uid ? ' ' + t('(you)') : ''}
                               </strong>
                               <small>
                                 {!ledger.memberIds.includes(id)
-                                  ? 'Former member · balance retained'
+                                  ? t('Former member · balance retained')
                                   : id === ledger.ownerId
-                                    ? 'Ledger owner'
-                                    : 'Member'}
+                                    ? t('Ledger owner')
+                                    : t('Member')}
                               </small>
                             </div>
                             <span
@@ -748,7 +789,7 @@ function AppContent({ user }: { user: User }) {
                       </div>
                       <div className="reconcile-bar">
                         <CheckCircle2 size={16} />
-                        Group total{' '}
+                        {t('Group total')}{' '}
                         <strong>
                           {money(
                             Object.values(net).reduce((a, b) => a + b, 0),
@@ -760,16 +801,17 @@ function AppContent({ user }: { user: User }) {
                     <section className="panel">
                       <div className="panel-heading">
                         <div>
-                          <h2>Suggested settlements</h2>
-                          <p>Deterministic netting. Fewer unnecessary transfers.</p>
+                          <h2>{t('Suggested settlements')}</h2>
+                          <p>{t('Deterministic netting. Fewer unnecessary transfers.')}</p>
                         </div>
                       </div>
                       {renderPlan()}
                       <div className="plan-note">
                         <CircleHelp size={15} />
                         <span>
-                          Largest balances first. This greedy plan is valid, but may not use the
-                          absolute fewest transfers. Repayments are separate financial records.
+                          {t(
+                            'Largest balances first. This greedy plan is valid, but may not use the absolute fewest transfers. Repayments are separate financial records.',
+                          )}
                         </span>
                       </div>
                     </section>
@@ -777,12 +819,12 @@ function AppContent({ user }: { user: User }) {
                   <section className="panel">
                     <div className="panel-heading">
                       <div>
-                        <h2>Loans & repayments</h2>
-                        <p>Actual movements of money, kept separate from expenses.</p>
+                        <h2>{t('Loans & repayments')}</h2>
+                        <p>{t('Actual movements of money, kept separate from expenses.')}</p>
                       </div>
                       <button className="secondary" onClick={() => setForm({ kind: 'loan' })}>
                         <Plus size={16} />
-                        Record loan
+                        {t('Record loan')}
                       </button>
                     </div>
                     {renderTable(recent.filter((r) => r.data.kind !== 'expense'))}
@@ -793,19 +835,20 @@ function AppContent({ user }: { user: User }) {
                 <section className="panel activity-panel">
                   <div className="panel-heading">
                     <div>
-                      <h2>Ledger history</h2>
-                      <p>Immutable versions. Server timestamps. A clear paper trail.</p>
+                      <h2>{t('Ledger history')}</h2>
+                      <p>{t('Immutable versions. Server timestamps. A clear paper trail.')}</p>
                     </div>
                     <span className="pill">
-                      <Clock3 size={14} /> Latest {historyLimit}
+                      <Clock3 size={14} /> {' ' + t('Latest') + ' '}
+                      {number(historyLimit)}
                     </span>
                   </div>
-                  {auditState.error && <div className="alert error">{auditState.error}</div>}
+                  {auditState.error && <div className="alert error">{t(auditState.error)}</div>}
                   {auditState.loading ? (
-                    <div className="loading">Loading history…</div>
+                    <div className="loading">{t('Loading history…')}</div>
                   ) : !auditState.items.length ? (
-                    <Empty title="A story waiting to be written.">
-                      Every financial change will appear here.
+                    <Empty title={t('A story waiting to be written.')}>
+                      {t('Every financial change will appear here.')}
                     </Empty>
                   ) : (
                     <div className="timeline">
@@ -820,24 +863,12 @@ function AppContent({ user }: { user: User }) {
                               <div className="timeline-head">
                                 <strong>
                                   {nameOf(ledger, a.actorId)}{' '}
-                                  <span className="muted">
-                                    {
-                                      (
-                                        {
-                                          create: 'created',
-                                          edit: 'edited',
-                                          delete: 'deleted',
-                                          restore: 'restored',
-                                          settle: 'confirmed payment for',
-                                        } as const
-                                      )[a.action]
-                                    }
-                                  </span>{' '}
+                                  <span className="muted">{t('audit.' + a.action)}</span>{' '}
                                   <button
                                     className="inline-link"
                                     onClick={() => setDetail(a.recordId)}
                                   >
-                                    {a.after.description}
+                                    {financialText(a.after, 'description')}
                                   </button>
                                 </strong>
                                 <time>{dateText(a.at)}</time>
@@ -845,7 +876,7 @@ function AppContent({ user }: { user: User }) {
                               <div className="diff-list">
                                 {changedFields(a.before, a.after).map((field) => (
                                   <div className="diff-row" key={field}>
-                                    <span>{field.replace(/([A-Z])/g, ' $1')}</span>
+                                    <span>{t('field.' + field)}</span>
                                     {a.before && (
                                       <>
                                         <del>{displayValue(field, a.before, ledger)}</del>
@@ -857,13 +888,14 @@ function AppContent({ user }: { user: User }) {
                                 ))}
                               </div>
                               <div className="event-foot">
-                                Version {a.version} · {a.after.kind}
+                                {t('Version') + ' '}
+                                {number(a.version)} · {t(a.after.kind)}
                                 {current && a.version !== current.version && (
                                   <button
                                     className="text-link"
                                     onClick={() => restore(current, a.after)}
                                   >
-                                    Restore this version
+                                    {t('Restore this version')}
                                   </button>
                                 )}
                               </div>
@@ -876,7 +908,7 @@ function AppContent({ user }: { user: User }) {
                   {auditState.items.length === historyLimit && (
                     <div className="panel-footer">
                       <button className="secondary" onClick={() => setHistoryLimit((n) => n + 100)}>
-                        Load older history
+                        {t('Load older history')}
                       </button>
                     </div>
                   )}
@@ -892,7 +924,11 @@ function AppContent({ user }: { user: User }) {
                   onLeave={() =>
                     setConfirm({
                       title: 'Leave this ledger?',
-                      body: `You’ll lose access to this ledger. Your transaction history and ${money(net[user.uid] || 0, ledger.currency)} balance remain for the other members; leaving does not forgive debt. Ask the owner for a new invitation if you need to return.`,
+                      body: () =>
+                        t(
+                          'You’ll lose access to this ledger. Your transaction history and {{balance}} balance remain for the other members; leaving does not forgive debt. Ask the owner for a new invitation if you need to return.',
+                          { balance: money(net[user.uid] || 0, ledger.currency) },
+                        ),
                       run: async () => {
                         await leaveLedger(db!, lid, user.uid);
                         selectLedger('');
@@ -906,9 +942,10 @@ function AppContent({ user }: { user: User }) {
         </main>
         <footer className="main-footer">
           <span>
-            settle. <span className="muted">A little clarity, together.</span>
+            {t('settle.') + ' '}
+            <span className="muted">{t('A little clarity, together.')}</span>
           </span>
-          <span>Private ledgers · No payment processing</span>
+          <span>{t('Private ledgers · No payment processing')}</span>
         </footer>
       </div>
       {newLedger && (
@@ -949,25 +986,27 @@ function AppContent({ user }: { user: User }) {
         />
       )}
       {detailRecord && ledger && !form && (
-        <Dialog title={detailRecord.data.description} onClose={() => setDetail(null)}>
+        <Dialog
+          title={financialText(detailRecord.data, 'description')}
+          onClose={() => setDetail(null)}
+        >
           <div className="record-detail">
             <span className="pill">
-              {detailRecord.data.kind} · Version {detailRecord.version}
-              {detailRecord.data.deleted ? ' · Deleted' : ''}
+              {t(detailRecord.data.kind)} {' ' + t('· Version') + ' '}
+              {number(detailRecord.version)}
+              {detailRecord.data.deleted ? ' ' + t('· Deleted') : ''}
             </span>
             <div className="detail-amount">
               {money(detailRecord.data.amount, ledger.currency)} <small>{ledger.currency}</small>
             </div>
             <p>
-              {detailRecord.data.kind === 'loan' ? 'Lent' : 'Paid'} by{' '}
-              <strong>{nameOf(ledger, detailRecord.data.payerId)}</strong>
-              {detailRecord.data.receiverId && (
-                <>
-                  {' '}
-                  to <strong>{nameOf(ledger, detailRecord.data.receiverId)}</strong>
-                </>
-              )}{' '}
-              on {detailRecord.data.date}
+              {t(detailRecord.data.kind === 'loan' ? 'Lent by {{payer}}' : 'Paid by {{payer}}', {
+                payer: nameOf(ledger, detailRecord.data.payerId),
+              })}
+              {detailRecord.data.receiverId
+                ? t(' to {{receiver}}', { receiver: nameOf(ledger, detailRecord.data.receiverId) })
+                : ''}
+              {t(' on {{date}}', { date: ledgerDate(detailRecord.data.date) })}
             </p>
             {detailRecord.data.participants.length > 0 && (
               <div className="detail-splits">
@@ -982,13 +1021,15 @@ function AppContent({ user }: { user: User }) {
                 ))}
               </div>
             )}
-            {detailRecord.data.notes && <p className="notes">{detailRecord.data.notes}</p>}
+            {detailRecord.data.notes && (
+              <p className="notes">{financialText(detailRecord.data, 'notes')}</p>
+            )}
             <p className="field-help">
-              Created by {nameOf(ledger, detailRecord.createdBy)} ·{' '}
-              {dateText(detailRecord.createdAt)}
+              {t('Created by') + ' '}
+              {nameOf(ledger, detailRecord.createdBy)} · {dateText(detailRecord.createdAt)}
               <br />
-              Last changed by {nameOf(ledger, detailRecord.updatedBy)} ·{' '}
-              {dateText(detailRecord.updatedAt)}
+              {t('Last changed by') + ' '}
+              {nameOf(ledger, detailRecord.updatedBy)} · {dateText(detailRecord.updatedAt)}
             </p>
             <div className="dialog-footer">
               <button
@@ -998,25 +1039,26 @@ function AppContent({ user }: { user: User }) {
                   setPage('activity');
                 }}
               >
-                View history <ArrowRight size={14} />
+                {t('View history') + ' '}
+                <ArrowRight size={14} />
               </button>
               {detailRecord.data.deleted ? (
                 <button
                   className="primary"
                   onClick={() => restore(detailRecord, detailRecord.data)}
                 >
-                  Restore transaction
+                  {t('Restore transaction')}
                 </button>
               ) : (
                 <>
                   <button className="danger-text" onClick={() => remove(detailRecord)}>
-                    Delete
+                    {t('Delete')}
                   </button>
                   <button
                     className="primary"
                     onClick={() => setForm({ kind: detailRecord.data.kind, record: detailRecord })}
                   >
-                    Edit transaction
+                    {t('Edit transaction')}
                   </button>
                 </>
               )}
@@ -1025,23 +1067,25 @@ function AppContent({ user }: { user: User }) {
         </Dialog>
       )}
       {confirm && (
-        <Dialog title={confirm.title} onClose={() => setConfirm(null)} busy={busy}>
-          <p className="confirm-body">{confirm.body}</p>
+        <Dialog title={t(confirm.title)} onClose={() => setConfirm(null)} busy={busy}>
+          <p className="confirm-body">
+            {typeof confirm.body === 'function' ? confirm.body() : t(confirm.body)}
+          </p>
           {error && (
             <div className="alert error" role="alert">
-              {error}
+              {t(error)}
             </div>
           )}
           <div className="dialog-footer">
             <button className="secondary" disabled={busy} onClick={() => setConfirm(null)}>
-              Cancel
+              {t('Cancel')}
             </button>
             <button
               className="primary"
               disabled={busy || !online}
               onClick={() => void action(confirm.run, 'Change saved and synchronized.')}
             >
-              {busy ? 'Saving to server…' : 'Confirm'}
+              {busy ? t('Saving to server…') : t('Confirm')}
             </button>
           </div>
         </Dialog>
@@ -1079,12 +1123,16 @@ function displayValue(field: string, d: FinancialData, ledger: Ledger): string {
     return Object.entries(d.weights)
       .map(
         ([id, n]) =>
-          `${nameOf(ledger, id)}: ${d.splitMethod === 'percentage' ? `${n / 100}%` : d.splitMethod === 'exact' ? money(n, ledger.currency) : n}`,
+          `${nameOf(ledger, id)}: ${d.splitMethod === 'percentage' ? percent(n) : d.splitMethod === 'exact' ? money(n, ledger.currency) : number(n)}`,
       )
       .join(', ');
-  return typeof value === 'boolean' ? (value ? 'Yes' : 'No') : String(value || '—');
+  if (field === 'description' || field === 'notes') return financialText(d, field);
+  if (field === 'date') return ledgerDate(d.date);
+  if (field === 'kind' || field === 'splitMethod') return t(String(value));
+  return typeof value === 'boolean' ? t(value ? 'Yes' : 'No') : String(value || '—');
 }
 export function App() {
+  useTranslation();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [profileError, setProfileError] = useState('');
@@ -1128,39 +1176,45 @@ export function App() {
   if (configurationError)
     return (
       <div className="configuration">
+        <LanguageSelector />
         <Layers3 size={40} />
-        <h1>Let’s connect your shared space.</h1>
-        <p>{configurationError}</p>
-        <code>VITE_USE_EMULATORS=true npm run dev</code>
+        <h1>{t('Let’s connect your shared space.')}</h1>
+        <p>{t(configurationError)}</p>
+        <code>{t('VITE_USE_EMULATORS=true npm run dev')}</code>
         <p>
-          Start Firebase emulators in another terminal with <code>npm run emulators</code>.
+          {t('Start Firebase emulators in another terminal with') + ' '}
+          <code>{t('npm run emulators')}</code>.
         </p>
       </div>
     );
   if (profileError)
     return (
       <main className="configuration">
-        <h1>We couldn’t load your profile.</h1>
+        <LanguageSelector />
+        <h1>{t('We couldn’t load your profile.')}</h1>
         <div className="alert error" role="alert">
-          {profileError}
+          {t(profileError)}
         </div>
-        <p>Your sign-in completed, but your profile has not synchronized. Reconnect and retry.</p>
+        <p>
+          {t('Your sign-in completed, but your profile has not synchronized. Reconnect and retry.')}
+        </p>
         <button className="primary" onClick={() => setRetry((n) => n + 1)}>
-          Retry profile setup
+          {t('Retry profile setup')}
         </button>
         <button
           className="secondary"
           onClick={() => void signOut(auth!).catch((e) => setProfileError(errorMessage(e)))}
         >
-          Sign out
+          {t('Sign out')}
         </button>
       </main>
     );
   if (loading)
     return (
       <div className="loading full-screen">
+        <LanguageSelector />
         <span className="spinner" />
-        Opening your shared space…
+        {t('Opening your shared space…')}
       </div>
     );
   return user ? (

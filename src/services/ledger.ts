@@ -10,7 +10,6 @@ import {
   runTransaction,
   serverTimestamp,
   setDoc,
-  Timestamp,
   updateDoc,
   writeBatch,
 } from 'firebase/firestore';
@@ -65,18 +64,37 @@ export async function leaveLedger(db: Firestore, id: string, uid: string) {
 export async function invite(db: Firestore, ledger: Ledger, email: string, uid: string) {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   const token = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-  await setDoc(doc(db, 'invitations', token), {
-    ledgerId: ledger.id,
-    ledgerName: ledger.name,
-    currency: ledger.currency,
-    email: email.trim().toLowerCase(),
-    createdBy: uid,
-    createdAt: serverTimestamp(),
-    expiresAt: Timestamp.fromMillis(Date.now() + 7 * 24 * 60 * 60 * 1000),
-    usedBy: null,
-    usedAt: null,
-    revoked: false,
-  });
+  const normalized = email.trim().toLowerCase();
+  if (normalized.length > 254 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(normalized))
+    throw new Error('Enter a valid email address.');
+  try {
+    await runTransaction(db, async (tx) => {
+      // Do not trust a possibly stale UI snapshot for authorization or metadata.
+      const current = await tx.get(doc(db, 'ledgers', ledger.id));
+      if (!current.exists() || current.data().ownerId !== uid)
+        throw new Error(
+          'Only the ledger owner can create invitations. Reopen the ledger and try again.',
+        );
+      tx.set(doc(db, 'invitations', token), {
+        ledgerId: ledger.id,
+        ledgerName: current.data().name,
+        currency: current.data().currency,
+        email: normalized,
+        createdBy: uid,
+        createdAt: serverTimestamp(),
+        // Rules derive the seven-day expiry from createdAt, never the browser clock.
+        usedBy: null,
+        usedAt: null,
+        revoked: false,
+      });
+    });
+  } catch (error) {
+    if (typeof error === 'object' && error && 'code' in error && error.code === 'permission-denied')
+      throw new Error(
+        'Invitation could not be created. Confirm you are the ledger owner, reload the ledger, and ask the administrator to deploy the current invitation rules.',
+      );
+    throw error;
+  }
   return token;
 }
 export async function acceptInvitation(
@@ -92,6 +110,8 @@ export async function acceptInvitation(
   const snap = await getDoc(ref);
   if (!snap.exists()) throw new Error('Invitation not found.');
   const invitation = snap.data() as Invitation;
+  if (invitation.revoked || invitation.usedBy)
+    throw new Error('This invitation was revoked or already used. Ask the owner for a new one.');
   const batch = writeBatch(db);
   batch.update(ref, { usedBy: user.uid, usedAt: serverTimestamp() });
   batch.update(doc(db, 'ledgers', invitation.ledgerId), {

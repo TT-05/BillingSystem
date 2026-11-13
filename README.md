@@ -2,7 +2,11 @@
 
 一个给朋友、室友使用的私人共享账本。React + TypeScript strict + Vite，使用 Firebase Authentication、Cloud Firestore、安全规则和 Firebase Hosting。没有付款处理、自动汇率转换、Cloud Functions 或付费扩展。
 
+最新邀请修复、双语使用说明与部署顺序：[INVITATIONS-I18N.md](docs/INVITATIONS-I18N.md)。最终测试：[TEST-RESULTS.md](docs/TEST-RESULTS.md)。本轮未部署。
+
 ## 已实现
+
+- 简体中文（默认）/ English 即时切换，选择本地保存；日期、金额、错误与财务历史随语言显示，用户输入原样保留。
 
 - 邮箱密码与 Google 登录、退出、持久登录、密码重置、邮箱验证、显示名资料；可在已登录账户中明确关联 Google。
 - 多账本、CAD / USD / CNY（默认 CAD）、所有者设置、成员自行退出。
@@ -38,7 +42,7 @@ npm run emulators
 VITE_USE_EMULATORS=true npm run dev
 ```
 
-打开终端显示的本地地址，默认 http://127.0.0.1:5173。本地注册真实测试账号；模拟器会把验证邮箱和密码重置链接打印到第一个终端。打开链接完成验证，然后在应用中点击 **Refresh verification**。此 demo 项目无法访问生产数据。模拟器默认不保存重启前数据，如需持久本地测试数据：
+打开终端显示的本地地址，默认 http://127.0.0.1:5173。本地注册真实测试账号；模拟器会把验证邮箱和密码重置链接打印到第一个终端。打开链接完成验证，然后在应用中点击 **刷新验证状态 / Refresh verification**。此 demo 项目无法访问生产数据。模拟器默认不保存重启前数据，如需持久本地测试数据：
 
 ```sh
 npx firebase emulators:start --project demo-settle --only auth,firestore --import .firebase/local-data --export-on-exit .firebase/local-data
@@ -46,9 +50,9 @@ npx firebase emulators:start --project demo-settle --only auth,firestore --impor
 
 首次没有导出目录时先去掉 `--import .firebase/local-data`。模拟器仅绑定 loopback，不要将其暴露到公网。生产代码没有演示账号或假数据分支。未设置配置且未启用模拟器时会显示明确的配置引导。
 
-## 连接 Firebase 项目 bill9206（尚未部署）
+## 连接 Firebase 项目 bill9206
 
-项目已创建：Spark、Firestore Standard `(default)` 生产模式、Email/Password 与 Google 已启用、Web App 已注册。这些是项目所有者提供的状态；本次工作没有访问线上项目、创建真实账户、修改线上数据库或执行部署。
+项目已有生产版本：Spark、Firestore Standard `(default)`、Email/Password 与 Google、已注册 Web App。本轮仅只读检查云配置、已部署规则和静态资源，没有创建生产账户、写入生产数据库或执行部署。部署新版本前请按上方文档先更新邀请规则。
 
 `.firebaserc` 已将默认项目设为 `bill9206`。模拟器和自动化测试仍显式指定 `--project demo-settle`，不使用生产项目。项目实际目录已从旧路径移动至 `/Users/test/billSystem`。
 
@@ -98,12 +102,13 @@ npm run test:integration
 npm run test:e2e
 npm run build
 # 仅在你决定部署时执行：
-npx firebase deploy --only firestore:rules,firestore:indexes,hosting --project bill9206
+npx firebase deploy --project bill9206 --only firestore:rules,firestore:indexes
+npx firebase deploy --project bill9206 --only hosting
 ```
 
 `firebase.json` 使用经典静态 Hosting（`dist`），不是需要付费后端的 App Hosting。SPA 回退、安全响应头和静态缓存已配置；CSP 仅额外允许 Google 登录必需的 `apis.google.com` 脚本和 `bill9206` Firebase auth iframe，继续禁止第三方嵌入应用。如果使用自定义 authDomain，需要同步审查 CSP 的 script/connect/frame 来源。认证 handler 由 Firebase 保留的 `/__/auth/*` 路由提供，不在 React 中实现。
 
-`.firebaserc` 已配置默认项目，但发布时仍明确使用 `--project bill9206`。预期默认地址为 `https://bill9206.web.app`；该地址未由本次工作部署或验证。无自定义域名费用，无 Cloud Functions、Cloud Run、Storage 或扩展。该架构可在 Spark 内使用，仍需遵守 Auth、Firestore、Hosting 免费额度。[官方定价](https://firebase.google.com/pricing)
+`.firebaserc` 已配置默认项目，但发布时仍明确使用 `--project bill9206`。预期默认地址为 `https://bill9206.web.app`；本次仅只读检查了现有站点资源，未执行部署。无自定义域名费用，无 Cloud Functions、Cloud Run、Storage 或扩展。该架构可在 Spark 内使用，仍需遵守 Auth、Firestore、Hosting 免费额度。[官方定价](https://firebase.google.com/pricing)
 
 Vite 会将环境变量编译到静态产物中，填完配置必须重新构建。本地缺少配置时构建可以成功，但页面会显示配置引导；**这不代表可以直接发布成可用生产站点**。真实 Google consent、支持邮箱、授权域、邮件送达及生产同步仍需项目所有者发布后验收。首次真实登录会写入本人资料；本次全部测试只使用本地模拟器。
 

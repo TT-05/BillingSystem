@@ -19,7 +19,7 @@ import type { Auth } from 'firebase/auth';
 import { connectFirestoreEmulator, doc, getDoc, getFirestore } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import { initializeGoogleProfile } from '../src/services/googleAuth';
-import { createLedger, saveProfile } from '../src/services/ledger';
+import { acceptInvitation, createLedger, invite, saveProfile } from '../src/services/ledger';
 let env: RulesTestEnvironment;
 let app: FirebaseApp;
 let auth: Auth;
@@ -117,5 +117,39 @@ describe('real Google provider flows against Auth and Firestore emulators', () =
     });
     expect(other.user.uid).not.toBe(uid);
     expect(auth.currentUser?.uid).toBe(other.user.uid);
+  });
+  it('lets an already registered Google recipient accept an owner invitation under their own UID', async () => {
+    const key = crypto.randomUUID();
+    const friendCredential = credential(
+      'friend-' + key,
+      `friend-${key}@example.com`,
+      'Invited Friend',
+    );
+    const friend = await signInWithCredential(auth, friendCredential);
+    const friendUid = friend.user.uid;
+    await initializeGoogleProfile(db, friend.user);
+    await signOut(auth);
+    const owner = await signInWithCredential(
+      auth,
+      credential('owner-' + key, `owner-${key}@example.com`, 'Google Owner'),
+    );
+    await initializeGoogleProfile(db, owner.user);
+    const id = await createLedger(db, owner.user, 'Google invitation ledger', 'CAD');
+    const ledger = {
+      id,
+      ...(await getDoc(doc(db, 'ledgers', id))).data(),
+    } as import('../src/domain/types').Ledger;
+    const token = await invite(db, ledger, `  FRIEND-${key}@EXAMPLE.COM  `, owner.user.uid);
+    await signOut(auth);
+    const returned = await signInWithCredential(auth, friendCredential);
+    expect(returned.user.uid).toBe(friendUid);
+    expect(returned.user.emailVerified).toBe(true);
+    await initializeGoogleProfile(db, returned.user);
+    await acceptInvitation(db, token, returned.user);
+    expect((await getDoc(doc(db, 'ledgers', id))).data()?.memberIds).toEqual([
+      owner.user.uid,
+      friendUid,
+    ]);
+    await expect(acceptInvitation(db, token, returned.user)).rejects.toThrow('already used');
   });
 });

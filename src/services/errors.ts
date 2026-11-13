@@ -1,3 +1,4 @@
+import en from '../i18n/locales/en.json';
 export function errorMessage(error: unknown): string {
   const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : '';
   const messages: Record<string, string> = {
@@ -40,6 +41,8 @@ export function errorMessage(error: unknown): string {
   };
   return (
     messages[code] ||
-    (error instanceof Error ? error.message : 'Something went wrong. Please try again.')
+    (error instanceof Error && Object.hasOwn(en, error.message)
+      ? error.message
+      : 'Something went wrong. Please try again.')
   );
 }

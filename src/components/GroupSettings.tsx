@@ -1,3 +1,8 @@
+import { localizedValidation } from '../i18n/validation';
+import { number } from '../i18n/format';
+import { useTranslation } from 'react-i18next';
+import { t } from '../i18n';
+import { invitationExpiresAt } from '../domain/invitations';
 import { useState } from 'react';
 import { collection, query, where } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
@@ -21,6 +26,7 @@ export function GroupSettings({
   onError: (s: string) => void;
   onLeave: () => void;
 }) {
+  useTranslation();
   const [now] = useState(() => Date.now());
   const isOwner = user.uid === ledger.ownerId;
   const [name, setName] = useState(ledger.name);
@@ -56,18 +62,19 @@ export function GroupSettings({
         <section className="panel settings-panel">
           <div className="panel-heading">
             <div>
-              <h2>The essentials</h2>
-              <p>A name and a currency to call your own.</p>
+              <h2>{t('The essentials')}</h2>
+              <p>{t('A name and a currency to call your own.')}</p>
             </div>
           </div>
           <form
+            {...localizedValidation}
             onSubmit={(e) => {
               e.preventDefault();
               void run(() => settings(db!, ledger, name, currency), 'Ledger settings saved.');
             }}
           >
             <label>
-              Ledger name
+              {t('Ledger name')}
               <input
                 required
                 maxLength={80}
@@ -77,7 +84,7 @@ export function GroupSettings({
               />
             </label>
             <label>
-              Currency
+              {t('Currency')}
               <select
                 disabled={!isOwner || ledger.hasRecords}
                 value={currency}
@@ -90,13 +97,13 @@ export function GroupSettings({
             </label>
             <p className="field-help">
               {ledger.hasRecords
-                ? 'Currency is locked because this ledger has financial history.'
-                : 'Currency locks after the first financial record.'}{' '}
-              No currency conversion.
+                ? t('Currency is locked because this ledger has financial history.')
+                : t('Currency locks after the first financial record.')}{' '}
+              {t('No currency conversion.')}
             </p>
             {isOwner && (
               <button className="primary" disabled={busy || !name.trim()}>
-                {busy ? 'Saving…' : 'Save settings'}
+                {busy ? t('Saving…') : t('Save settings')}
               </button>
             )}
           </form>
@@ -104,8 +111,12 @@ export function GroupSettings({
         <section className="panel">
           <div className="panel-heading">
             <div>
-              <h2>Your people</h2>
-              <p>{ledger.memberIds.length} active members · 5 historical members maximum</p>
+              <h2>{t('Your people')}</h2>
+              <p>
+                {t('{{countText}} active members · 5 historical members maximum', {
+                  countText: number(ledger.memberIds.length),
+                })}
+              </p>
             </div>
           </div>
           <div className="member-balances">
@@ -115,14 +126,14 @@ export function GroupSettings({
                 <div>
                   <strong>
                     {m.name}
-                    {id === user.uid ? ' (you)' : ''}
+                    {id === user.uid ? ' ' + t('(you)') : ''}
                   </strong>
                   <small>
                     {!ledger.memberIds.includes(id)
-                      ? 'Left the ledger'
+                      ? t('Left the ledger')
                       : id === ledger.ownerId
-                        ? 'Owner · manages settings and invitations'
-                        : 'Member · can manage financial records'}
+                        ? t('Owner · manages settings and invitations')
+                        : t('Member · can manage financial records')}
                   </small>
                 </div>
               </div>
@@ -135,11 +146,12 @@ export function GroupSettings({
           <section className="panel settings-panel">
             <div className="panel-heading">
               <div>
-                <h2>Bring someone in</h2>
-                <p>A private invitation for one email address.</p>
+                <h2>{t('Bring someone in')}</h2>
+                <p>{t('A private invitation for one email address.')}</p>
               </div>
             </div>
             <form
+              {...localizedValidation}
               onSubmit={(e) => {
                 e.preventDefault();
                 void run(async () => {
@@ -150,36 +162,38 @@ export function GroupSettings({
               }}
             >
               <label>
-                Their email address
+                {t('Their email address')}
                 <input
                   required
                   type="email"
-                  placeholder="friend@example.com"
+                  placeholder={t('friend@example.com')}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                 />
               </label>
               <p className="field-help">
-                They need an account with a verified matching email. Links expire in 7 days and can
-                be used once. Share the link yourself; no email is sent automatically.
+                {t(
+                  'They need an account with a verified matching email. Links expire in 7 days and can be used once. Share the link yourself; no email is sent automatically.',
+                )}
               </p>
               {Object.keys(ledger.members).length >= 5 && (
                 <p className="field-help">
-                  All five historical member slots are used. Only a former member can rejoin with a
-                  new invitation.
+                  {t(
+                    'All five historical member slots are used. Only a former member can rejoin with a new invitation.',
+                  )}
                 </p>
               )}
               <button className="primary" disabled={busy}>
-                {busy ? 'Creating…' : 'Create invitation'}
+                {busy ? t('Creating…') : t('Create invitation')}
                 <ArrowUpRight size={16} />
               </button>
             </form>
             {link && (
               <div className="invite-link">
                 <label>
-                  Invitation link
+                  {t('Invitation link')}
                   <input
-                    aria-label="Invitation link"
+                    aria-label={t('Invitation link')}
                     readOnly
                     value={link}
                     onFocus={(e) => e.target.select()}
@@ -195,11 +209,11 @@ export function GroupSettings({
                   }
                 >
                   <Copy size={14} />
-                  Copy link
+                  {t('Copy link')}
                 </button>
               </div>
             )}
-            {invitations.error && <p className="alert error">{invitations.error}</p>}
+            {invitations.error && <p className="alert error">{t(invitations.error)}</p>}
             <div className="invitation-list">
               {invitations.items.map((i) => (
                 <div key={i.id}>
@@ -207,12 +221,12 @@ export function GroupSettings({
                     <strong>{i.email}</strong>
                     <small>
                       {i.revoked
-                        ? 'Revoked'
+                        ? t('Revoked')
                         : i.usedBy
-                          ? 'Accepted'
-                          : i.expiresAt.toMillis() < now
-                            ? 'Expired'
-                            : 'Pending'}
+                          ? t('Accepted')
+                          : invitationExpiresAt(i).toMillis() < now
+                            ? t('Expired')
+                            : t('Pending')}
                     </small>
                   </span>
                   {!i.revoked && !i.usedBy && (
@@ -223,7 +237,7 @@ export function GroupSettings({
                         void run(() => revokeInvitation(db!, i.id), 'Invitation revoked.')
                       }
                     >
-                      Revoke
+                      {t('Revoke')}
                     </button>
                   )}
                 </div>
@@ -233,23 +247,29 @@ export function GroupSettings({
         )}
         <section className="permission-card">
           <Layers3 size={24} />
-          <h3>A shared ledger. Clear ground rules.</h3>
+          <h3>{t('A shared ledger. Clear ground rules.')}</h3>
           <p>
-            Every member can create, edit, delete, and restore financial entries. Every change is
-            recorded in the immutable history.
+            {t(
+              'Every member can create, edit, delete, and restore financial entries. Every change is recorded in the immutable history.',
+            )}
           </p>
           <p>
-            Only the owner can change group settings and invite members. No member can erase
-            financial or audit history.
+            {t(
+              'Only the owner can change group settings and invite members. No member can erase financial or audit history.',
+            )}
           </p>
           <p>
             {isOwner
-              ? 'As owner, you keep ownership and cannot leave. Ownership transfer and permanent ledger deletion are not available in this version.'
-              : 'You can leave at any time. Your history and debts stay with the ledger; a new invitation is needed to rejoin.'}
+              ? t(
+                  'As owner, you keep ownership and cannot leave. Ownership transfer and permanent ledger deletion are not available in this version.',
+                )
+              : t(
+                  'You can leave at any time. Your history and debts stay with the ledger; a new invitation is needed to rejoin.',
+                )}
           </p>
           {!isOwner && (
             <button className="secondary" onClick={onLeave}>
-              Leave ledger
+              {t('Leave ledger')}
             </button>
           )}
         </section>

@@ -1,3 +1,6 @@
+import { LanguageSelector } from './LanguageSelector';
+import { useTranslation } from 'react-i18next';
+import { t } from '../i18n';
 import { useEffect, useId, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { X } from 'lucide-react';
@@ -12,6 +15,7 @@ export function Dialog({
   onClose: () => void;
   busy?: boolean;
 }) {
+  useTranslation();
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
   useEffect(() => {
@@ -53,18 +57,19 @@ export function Dialog({
       <div ref={ref} role="dialog" aria-modal="true" aria-labelledby={titleId} className="dialog">
         <div className="dialog-head">
           <div>
-            <span className="eyebrow">SETTLE / YOUR SHARED LEDGER</span>
+            <span className="eyebrow">{t('SETTLE / YOUR SHARED LEDGER')}</span>
             <h2 id={titleId}>{title}</h2>
           </div>
           <button
             className="icon-button"
-            aria-label="Close dialog"
+            aria-label={t('Close dialog')}
             disabled={busy}
             onClick={onClose}
           >
             <X size={20} />
           </button>
         </div>
+        <LanguageSelector />
         {children}
       </div>
     </div>

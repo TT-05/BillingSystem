@@ -1,3 +1,5 @@
+> 最新状态：项目已有线上版本。本轮邀请与双语修复尚未发布；注册 Web App/授权域/有效 API key 已再次只读验证。先部署新邀请规则再发布前端，具体见 [INVITATIONS-I18N.md](INVITATIONS-I18N.md)。以下初始搭建及旧验收记录保留作参考。
+
 # bill9206 配置与部署前交接
 
 本次任务只修改本地代码、配置和文档。没有部署、没有访问线上 Firestore 数据、没有创建真实 Firebase 用户。项目位置是 `/Users/test/billSystem`，旧路径 `/Users/test/cmput328/billSystem` 当前不存在。
@@ -79,10 +81,11 @@ npm run test:e2e
 
 ```sh
 npx firebase login
-npx firebase deploy --only firestore:rules,firestore:indexes,hosting --project bill9206
+npx firebase deploy --project bill9206 --only firestore:rules,firestore:indexes
+npx firebase deploy --project bill9206 --only hosting
 ```
 
-无需再运行 `firebase init`，避免覆盖现有配置和规则。默认预期 URL 为 `https://bill9206.web.app`，未在本次部署或访问验证。部署后使用两个真实用户验收 Google/密码登录、关联、邀请、跨窗口同步和规则隔离。首次真实登录会写本人资料；本次没有运行真实项目登录。
+无需再运行 `firebase init`，避免覆盖现有配置和规则。默认预期 URL 为 `https://bill9206.web.app`，本次只读检查了现有静态资源，但未部署新版本。部署后使用两个真实用户验收 Google/密码登录、关联、邀请、跨窗口同步和规则隔离。首次真实登录会写本人资料；本次没有运行真实项目登录。
 
 ## Spark 兼容性和限制
 

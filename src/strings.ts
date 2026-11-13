@@ -1,4 +1,4 @@
-// Primary navigation and common copy live here as a starting point for localization.
+// Stable navigation translation keys. Translations are bundled in src/i18n/locales.
 export const strings = {
   brand: 'settle',
   tagline: 'Shared expenses, sorted.',

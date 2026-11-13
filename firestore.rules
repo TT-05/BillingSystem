@@ -29,6 +29,14 @@ service cloud.firestore {
         && text(d.name,80) && d.name.size() > 0 && currency(d.currency)
         && membershipValid(d) && d.revision is int && d.hasRecords is bool && text(d.joinToken,64);
     }
+    // New tokens expire from the authoritative server timestamp. Honor the exact
+    // expiry of older tokens; never extend an existing invitation during rollout.
+    function invitationExpiry(d) {
+      return d.get('expiresAt', d.createdAt + duration.value(7,'d'));
+    }
+    function invitedEmail(d) {
+      return request.auth.token.email is string && d.email == request.auth.token.email.lower();
+    }
     function validJoin(lid, d, old) {
       let inv = get(/databases/$(database)/documents/invitations/$(d.joinToken)).data;
       let after = getAfter(/databases/$(database)/documents/invitations/$(d.joinToken)).data;
@@ -37,8 +45,8 @@ service cloud.firestore {
         && d.memberIds.toSet() == old.memberIds.toSet().union([request.auth.uid].toSet())
         && d.members.diff(old.members).affectedKeys().hasOnly([request.auth.uid])
         && d.members[request.auth.uid].keys().hasOnly(['name']) && text(d.members[request.auth.uid].name,80)
-        && inv.ledgerId == lid && inv.email == request.auth.token.email && request.auth.token.email_verified == true
-        && inv.usedBy == null && inv.revoked == false && inv.expiresAt > request.time
+        && inv.ledgerId == lid && invitedEmail(inv) && request.auth.token.email_verified == true
+        && inv.usedBy == null && inv.revoked == false && invitationExpiry(inv) > request.time
         && after.usedBy == request.auth.uid && after.usedAt == request.time;
     }
     match /ledgers/{lid} {
@@ -66,21 +74,24 @@ service cloud.firestore {
       allow delete: if false;
     }
     match /invitations/{token} {
-      allow get: if signed() && (resource.data.email == request.auth.token.email || owner(resource.data.ledgerId));
+      allow get: if signed() && (invitedEmail(resource.data) || owner(resource.data.ledgerId));
       allow list: if signed() && resource.data.createdBy == request.auth.uid && owner(resource.data.ledgerId);
       allow create: if signed() && token.matches('^[a-f0-9]{64}$')
         && request.resource.data.keys().hasOnly(['ledgerId','ledgerName','currency','email','createdBy','createdAt','expiresAt','usedBy','usedAt','revoked'])
         && owner(request.resource.data.ledgerId) && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.ledgerName == get(ledgerPath(request.resource.data.ledgerId)).data.name
         && request.resource.data.currency == get(ledgerPath(request.resource.data.ledgerId)).data.currency
-        && text(request.resource.data.email,254) && request.resource.data.email.matches('^[^@ ]+@[^@ ]+\\.[^@ ]+$')
+        && text(request.resource.data.email,254) && request.resource.data.email == request.resource.data.email.lower()
+        && request.resource.data.email.matches('^[^@ ]+@[^@ ]+\\.[^@ ]+$')
         && request.resource.data.createdAt == request.time
-        && request.resource.data.expiresAt > request.time && request.resource.data.expiresAt <= request.time + duration.value(7,'d')
+        && (!('expiresAt' in request.resource.data)
+          || (request.resource.data.expiresAt is timestamp && request.resource.data.expiresAt > request.time
+            && request.resource.data.expiresAt <= request.time + duration.value(7,'d')))
         && request.resource.data.usedBy == null && request.resource.data.usedAt == null && request.resource.data.revoked == false;
       allow update: if signed() && (
         (owner(resource.data.ledgerId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['revoked']) && request.resource.data.revoked == true)
-        || (resource.data.email == request.auth.token.email && request.auth.token.email_verified == true
-          && resource.data.usedBy == null && resource.data.revoked == false && resource.data.expiresAt > request.time
+        || (invitedEmail(resource.data) && request.auth.token.email_verified == true
+          && resource.data.usedBy == null && resource.data.revoked == false && invitationExpiry(resource.data) > request.time
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedBy','usedAt'])
           && request.resource.data.usedBy == request.auth.uid && request.resource.data.usedAt == request.time
           && !(request.auth.uid in get(ledgerPath(resource.data.ledgerId)).data.memberIds)

@@ -1,3 +1,6 @@
+import { localizedValidation } from '../i18n/validation';
+import { useTranslation } from 'react-i18next';
+import { t } from '../i18n';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { User } from 'firebase/auth';
@@ -16,6 +19,7 @@ export function LedgerForm({
   onClose: () => void;
   onSaved: (id: string) => void;
 }) {
+  useTranslation();
   const [name, setName] = useState('');
   const [currency, setCurrency] = useState<Currency>('CAD');
   const [busy, setBusy] = useState(false);
@@ -33,42 +37,42 @@ export function LedgerForm({
     }
   }
   return (
-    <Dialog title="Create a shared ledger" onClose={onClose} busy={busy}>
-      <form onSubmit={(e) => void submit(e)}>
-        <p className="muted">A fresh space for the things you share.</p>
+    <Dialog title={t('Create a shared ledger')} onClose={onClose} busy={busy}>
+      <form {...localizedValidation} onSubmit={(e) => void submit(e)}>
+        <p className="muted">{t('A fresh space for the things you share.')}</p>
         <label>
-          Ledger name
+          {t('Ledger name')}
           <input
             autoFocus
             required
             maxLength={80}
-            placeholder="e.g. The Maple House"
+            placeholder={t('e.g. The Maple House')}
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
         </label>
         <label>
-          Ledger currency
+          {t('Ledger currency')}
           <select value={currency} onChange={(e) => setCurrency(e.target.value as Currency)}>
-            <option value="CAD">CAD — Canadian dollar</option>
-            <option value="USD">USD — US dollar</option>
-            <option value="CNY">CNY — Chinese yuan</option>
+            <option value="CAD">{t('CAD — Canadian dollar')}</option>
+            <option value="USD">{t('USD — US dollar')}</option>
+            <option value="CNY">{t('CNY — Chinese yuan')}</option>
           </select>
         </label>
         <p className="field-help">
-          One currency per ledger. Locked after the first financial record.
+          {t('One currency per ledger. Locked after the first financial record.')}
         </p>
         {error && (
           <div className="alert error" role="alert">
-            {error}
+            {t(error)}
           </div>
         )}
         <div className="dialog-footer">
           <button type="button" className="secondary" onClick={onClose} disabled={busy}>
-            Cancel
+            {t('Cancel')}
           </button>
           <button className="primary" disabled={busy}>
-            {busy ? 'Creating…' : 'Create ledger'}
+            {busy ? t('Creating…') : t('Create ledger')}
           </button>
         </div>
       </form>

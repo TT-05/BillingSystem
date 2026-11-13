@@ -5,6 +5,8 @@ export default defineConfig({
       'tests/rules.test.ts',
       'tests/auth.integration.test.ts',
       'tests/membership.regression.test.ts',
+      'tests/invitations.regression.test.ts',
+      'tests/invitations.before.test.ts',
     ],
     environment: 'node',
     fileParallelism: false,

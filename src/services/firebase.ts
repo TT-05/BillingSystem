@@ -1,3 +1,4 @@
+import { bindAuthLanguage } from '../i18n/authLanguage';
 import { initializeApp } from 'firebase/app';
 import {
   browserLocalPersistence,
@@ -27,6 +28,7 @@ export const configurationError = Object.values(config).some((v) => !v)
 const app = configurationError ? null : initializeApp(config);
 export const auth = app ? getAuth(app) : null;
 export const db = app ? getFirestore(app) : null;
+if (auth) bindAuthLanguage(auth);
 if (auth && db) {
   if (emulator) {
     connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });

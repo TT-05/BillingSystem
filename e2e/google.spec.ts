@@ -1,5 +1,10 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('settle-language')) localStorage.setItem('settle-language', 'en');
+  });
+});
 async function openGoogle(page: Page, button = 'Continue with Google') {
   const popup = page.waitForEvent('popup');
   await page.getByRole('button', { name: button, exact: true }).click();

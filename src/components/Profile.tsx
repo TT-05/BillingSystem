@@ -1,3 +1,6 @@
+import { localizedValidation } from '../i18n/validation';
+import { useTranslation } from 'react-i18next';
+import { t } from '../i18n';
 import { useState } from 'react';
 import { updateProfile } from 'firebase/auth';
 import type { User } from 'firebase/auth';
@@ -15,6 +18,7 @@ export function Profile({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  useTranslation();
   const [name, setName] = useState(user.displayName || '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -38,8 +42,9 @@ export function Profile({
     }
   }
   return (
-    <Dialog title="Your profile" onClose={onClose} busy={busy}>
+    <Dialog title={t('Your profile')} onClose={onClose} busy={busy}>
       <form
+        {...localizedValidation}
         onSubmit={(e) => {
           e.preventDefault();
           setBusy(true);
@@ -57,34 +62,37 @@ export function Profile({
         }}
       >
         <label>
-          Display name
+          {t('Display name')}
           <input required maxLength={80} value={name} onChange={(e) => setName(e.target.value)} />
         </label>
         <p className="muted">{user.email}</p>
         <p className="field-help">
-          Your UID stays the same. Ledger names are captured at joining so history remains readable.
+          {t(
+            'Your UID stays the same. Ledger names are captured at joining so history remains readable.',
+          )}
         </p>
-        {error && <div className="alert error">{error}</div>}
+        {error && <div className="alert error">{t(error)}</div>}
         <div className="dialog-footer">
           <button className="primary" disabled={busy || !name.trim()}>
-            {busy ? 'Saving…' : 'Save profile'}
+            {busy ? t('Saving…') : t('Save profile')}
           </button>
         </div>
       </form>
-      <section className="profile-signin" aria-label="Sign-in methods">
-        <h3>Sign-in methods</h3>
+      <section className="profile-signin" aria-label={t('Sign-in methods')}>
+        <h3>{t('Sign-in methods')}</h3>
         <p className="field-help">
-          {user.providerData.some((p) => p.providerId === 'password') ? 'Email/password' : ''}
+          {user.providerData.some((p) => p.providerId === 'password') ? t('Email/password') : ''}
           {user.providerData.some((p) => p.providerId === 'password') && googleLinked ? ' · ' : ''}
-          {googleLinked ? 'Google' : ''}
+          {googleLinked ? t('Google') : ''}
         </p>
         <p className="field-help">
-          Link Google only to the account you want to keep. This preserves your UID and ledger
-          history. A Google account already owned by another UID cannot be merged here.
+          {t(
+            'Link Google only to the account you want to keep. This preserves your UID and ledger history. A Google account already owned by another UID cannot be merged here.',
+          )}
         </p>
         {notice && (
           <div className="alert success" role="status">
-            {notice}
+            {t(notice)}
           </div>
         )}
         <button
@@ -93,7 +101,7 @@ export function Profile({
           disabled={busy || googleLinked}
           onClick={() => void connectGoogle()}
         >
-          {googleLinked ? 'Google connected' : 'Link Google account'}
+          {googleLinked ? t('Google connected') : t('Link Google account')}
         </button>
       </section>
     </Dialog>

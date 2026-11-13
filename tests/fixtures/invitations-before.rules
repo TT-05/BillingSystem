@@ -1,0 +1,217 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signed() { return request.auth != null; }
+    function ledgerPath(lid) { return /databases/$(database)/documents/ledgers/$(lid); }
+    function member(lid) { return signed() && request.auth.uid in get(ledgerPath(lid)).data.memberIds; }
+    function owner(lid) { return signed() && get(ledgerPath(lid)).data.ownerId == request.auth.uid; }
+    function text(s, max) { return s is string && s.size() <= max; }
+    function currency(c) { return c in ['CAD','USD','CNY']; }
+    function positive(n) { return n is int && n > 0 && n <= 1000000000; }
+    match /users/{uid} {
+      allow read: if signed() && request.auth.uid == uid;
+      allow create, update: if signed() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['name','updatedAt'])
+        && text(request.resource.data.name,80) && request.resource.data.name.size() > 0
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+    // Shared by creation, invitation redemption and self-leave. Financial-only
+    // updates keep these fields unchanged and avoid unnecessary Rules evaluation.
+    function membershipValid(d) {
+      return d.memberIds is list && d.memberIds.size() >= 1 && d.memberIds.size() <= 5
+        && d.memberIds.toSet().size() == d.memberIds.size()
+        && d.members is map && d.members.size() <= 5 && d.members.keys().hasAll(d.memberIds)
+        && d.ownerId in d.memberIds;
+    }
+    function ledgerValid(d) {
+      return d.keys().hasOnly(['name','currency','ownerId','memberIds','members','createdAt','revision','joinToken','hasRecords'])
+        && text(d.name,80) && d.name.size() > 0 && currency(d.currency)
+        && membershipValid(d) && d.revision is int && d.hasRecords is bool && text(d.joinToken,64);
+    }
+    function validJoin(lid, d, old) {
+      let inv = get(/databases/$(database)/documents/invitations/$(d.joinToken)).data;
+      let after = getAfter(/databases/$(database)/documents/invitations/$(d.joinToken)).data;
+      return !(request.auth.uid in old.memberIds)
+        && d.diff(old).affectedKeys().hasOnly(['memberIds','members','joinToken','revision'])
+        && d.memberIds.toSet() == old.memberIds.toSet().union([request.auth.uid].toSet())
+        && d.members.diff(old.members).affectedKeys().hasOnly([request.auth.uid])
+        && d.members[request.auth.uid].keys().hasOnly(['name']) && text(d.members[request.auth.uid].name,80)
+        && inv.ledgerId == lid && inv.email == request.auth.token.email && request.auth.token.email_verified == true
+        && inv.usedBy == null && inv.revoked == false && inv.expiresAt > request.time
+        && after.usedBy == request.auth.uid && after.usedAt == request.time;
+    }
+    match /ledgers/{lid} {
+      allow read: if signed() && request.auth.uid in resource.data.memberIds;
+      allow create: if signed() && ledgerValid(request.resource.data)
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.memberIds == [request.auth.uid]
+        && request.resource.data.members.keys().hasOnly([request.auth.uid])
+        && request.resource.data.members[request.auth.uid].keys().hasOnly(['name'])
+        && text(request.resource.data.members[request.auth.uid].name,80)
+        && request.resource.data.createdAt == request.time && request.resource.data.revision == 1
+        && request.resource.data.joinToken == '' && request.resource.data.hasRecords == false;
+      allow update: if signed() && request.resource.data.revision is int
+        && request.resource.data.revision == resource.data.revision + 1
+        && (
+          (owner(lid) && text(request.resource.data.name,80) && request.resource.data.name.size() > 0 && currency(request.resource.data.currency) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','currency','revision'])
+            && (!resource.data.hasRecords || request.resource.data.currency == resource.data.currency))
+          || (member(lid) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hasRecords','revision']) && request.resource.data.hasRecords == true)
+          || (member(lid) && request.auth.uid != resource.data.ownerId
+            && membershipValid(request.resource.data)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds','revision'])
+            && request.resource.data.memberIds.toSet() == resource.data.memberIds.toSet().difference([request.auth.uid].toSet()))
+          || (ledgerValid(request.resource.data) && validJoin(lid,request.resource.data,resource.data))
+        );
+      allow delete: if false;
+    }
+    match /invitations/{token} {
+      allow get: if signed() && (resource.data.email == request.auth.token.email || owner(resource.data.ledgerId));
+      allow list: if signed() && resource.data.createdBy == request.auth.uid && owner(resource.data.ledgerId);
+      allow create: if signed() && token.matches('^[a-f0-9]{64}$')
+        && request.resource.data.keys().hasOnly(['ledgerId','ledgerName','currency','email','createdBy','createdAt','expiresAt','usedBy','usedAt','revoked'])
+        && owner(request.resource.data.ledgerId) && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.ledgerName == get(ledgerPath(request.resource.data.ledgerId)).data.name
+        && request.resource.data.currency == get(ledgerPath(request.resource.data.ledgerId)).data.currency
+        && text(request.resource.data.email,254) && request.resource.data.email.matches('^[^@ ]+@[^@ ]+\\.[^@ ]+$')
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.expiresAt > request.time && request.resource.data.expiresAt <= request.time + duration.value(7,'d')
+        && request.resource.data.usedBy == null && request.resource.data.usedAt == null && request.resource.data.revoked == false;
+      allow update: if signed() && (
+        (owner(resource.data.ledgerId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['revoked']) && request.resource.data.revoked == true)
+        || (resource.data.email == request.auth.token.email && request.auth.token.email_verified == true
+          && resource.data.usedBy == null && resource.data.revoked == false && resource.data.expiresAt > request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedBy','usedAt'])
+          && request.resource.data.usedBy == request.auth.uid && request.resource.data.usedAt == request.time
+          && !(request.auth.uid in get(ledgerPath(resource.data.ledgerId)).data.memberIds)
+          && request.auth.uid in getAfter(ledgerPath(resource.data.ledgerId)).data.memberIds
+          && getAfter(ledgerPath(resource.data.ledgerId)).data.joinToken == token)
+      );
+      allow delete: if false;
+    }
+    function allocation(d) {
+      return d.splitMethod == 'equal' ? equalParts(d) : (d.splitMethod == 'exact' ? exactParts(d) : percentageParts(d));
+    }
+    function equalParts(d) {
+      let n=d.participants.size();
+      return (n <= 0 || equalOne(d,0))
+        && (n <= 1 || equalOne(d,1))
+        && (n <= 2 || equalOne(d,2))
+        && (n <= 3 || equalOne(d,3))
+        && (n <= 4 || equalOne(d,4));
+    }
+    function equalOne(d,i) {
+      let uid=d.participants[i];
+      let s=d.shares[uid];
+      let w=d.weights[uid];
+      let n=d.participants.size();
+      let a=d.amount;
+      return s is int && s >= 0 && w is int && w == 1 && s == int(a / n) + (i < a % n ? 1 : 0);
+    }
+    function exactParts(d) {
+      let p=d.participants;
+      let n=p.size();
+      let s=d.shares;
+      let w=d.weights;
+      return s == w
+        && ((n>0 ? s[p[0]] : 0) + (n>1 ? s[p[1]] : 0) + (n>2 ? s[p[2]] : 0) + (n>3 ? s[p[3]] : 0) + (n>4 ? s[p[4]] : 0)) == d.amount
+        && (n <= 0 || exactOne(d,0))
+        && (n <= 1 || exactOne(d,1))
+        && (n <= 2 || exactOne(d,2))
+        && (n <= 3 || exactOne(d,3))
+        && (n <= 4 || exactOne(d,4));
+    }
+    function exactOne(d,i) {
+      let uid=d.participants[i];
+      let s=d.shares[uid];
+      return s is int && s >= 0;
+    }
+    function percentageParts(d) {
+      let p=d.participants;
+      let n=p.size();
+      let s=d.shares;
+      let w=d.weights;
+      return ((n>0 ? s[p[0]] : 0) + (n>1 ? s[p[1]] : 0) + (n>2 ? s[p[2]] : 0) + (n>3 ? s[p[3]] : 0) + (n>4 ? s[p[4]] : 0)) == d.amount
+        && ((n>0 ? w[p[0]] : 0) + (n>1 ? w[p[1]] : 0) + (n>2 ? w[p[2]] : 0) + (n>3 ? w[p[3]] : 0) + (n>4 ? w[p[4]] : 0)) == 10000
+        && (n <= 0 || percentageOne(d,0))
+        && (n <= 1 || percentageOne(d,1))
+        && (n <= 2 || percentageOne(d,2))
+        && (n <= 3 || percentageOne(d,3))
+        && (n <= 4 || percentageOne(d,4));
+    }
+    function percentageOne(d,i) {
+      let uid=d.participants[i];
+      let s=d.shares[uid];
+      let w=d.weights[uid];
+      let n=d.participants.size();
+      let a=d.amount;
+      return s is int && s >= 0 && w is int && w >= 0 && w <= 10000 && (i == n-1 || s == int(a * w / 10000));
+    }
+    function payload(lid,d) {
+      let l = get(ledgerPath(lid)).data;
+      return d.keys().hasOnly(['kind','description','amount','currency','date','payerId','receiverId','participants','shares','weights','splitMethod','notes','deleted','settlementKey'])
+        && d.kind in ['expense','loan','repayment'] && text(d.description,120) && d.description.size()>0
+        && positive(d.amount) && d.currency == l.currency && text(d.notes,2000) && d.deleted is bool
+        && d.date is string && d.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && d.payerId in l.members && text(d.settlementKey,100)
+        && d.participants is list && d.shares is map && d.weights is map
+        && (d.splitMethod in ['equal','exact','percentage'])
+        && (
+          (d.kind == 'expense' && d.receiverId == '' && d.settlementKey == ''
+            && d.participants.size() > 0 && d.participants.size() <= 5 && d.participants.toSet().size() == d.participants.size()
+            && d.participants.hasOnly(l.members.keys()) && d.shares.keys().toSet() == d.participants.toSet() && d.weights.keys().toSet() == d.participants.toSet()
+            && allocation(d))
+          || (d.kind in ['loan','repayment'] && d.receiverId in l.members && d.receiverId != d.payerId
+            && d.participants.size() == 0 && d.shares.size() == 0 && d.weights.size() == 0 && d.splitMethod == 'equal'
+            && (d.kind == 'repayment' || d.settlementKey == ''))
+        );
+    }
+    function pairedAudit(lid,rid,d,before) {
+      let a = getAfter(/databases/$(database)/documents/ledgers/$(lid)/audit/$(rid + '_' + string(d.version))).data;
+      return a.ledgerId == lid && a.recordId == rid && a.version == d.version && a.actorId == request.auth.uid
+        && a.at == request.time && a.action == d.action && a.before == before && a.after == d.data;
+    }
+    function envelope(lid,d) {
+      return d.keys().hasOnly(['ledgerId','data','version','createdBy','createdAt','updatedBy','updatedAt','action'])
+        && d.ledgerId == lid && d.version is int && d.updatedBy == request.auth.uid && d.updatedAt == request.time
+        && payload(lid,d.data)
+        && getAfter(ledgerPath(lid)).data.revision == get(ledgerPath(lid)).data.revision + 1
+        && getAfter(ledgerPath(lid)).data.hasRecords == true;
+    }
+    function transition(old,d) {
+      return (d.action == 'delete' && !old.deleted && d.data.deleted && d.data.diff(old).affectedKeys().hasOnly(['deleted']))
+        || (d.action == 'restore' && !d.data.deleted)
+        || (d.action == 'edit' && !old.deleted && !d.data.deleted);
+    }
+    match /ledgers/{lid}/records/{rid} {
+      allow read: if member(lid);
+      allow create: if member(lid) && envelope(lid,request.resource.data)
+        && request.resource.data.version == 1 && request.resource.data.createdBy == request.auth.uid && request.resource.data.createdAt == request.time
+        && request.resource.data.data.deleted == false
+        && (request.resource.data.action == 'create' || (request.resource.data.action == 'settle' && request.resource.data.data.kind == 'repayment'))
+        && (request.resource.data.data.settlementKey == '' || (request.resource.data.action == 'settle' && request.resource.data.data.settlementKey == rid))
+        && pairedAudit(lid,rid,request.resource.data,null);
+      allow update: if member(lid) && envelope(lid,request.resource.data)
+        && request.resource.data.version == resource.data.version + 1
+        && request.resource.data.createdBy == resource.data.createdBy && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.data.kind == resource.data.data.kind && request.resource.data.data.settlementKey == resource.data.data.settlementKey
+        && transition(resource.data.data,request.resource.data)
+        && pairedAudit(lid,rid,request.resource.data,resource.data.data);
+      allow delete: if false;
+    }
+    match /ledgers/{lid}/audit/{aid} {
+      allow read: if member(lid);
+      allow create: if member(lid) && request.resource.data.keys().hasOnly(['ledgerId','recordId','version','actorId','at','action','before','after'])
+        && aid == request.resource.data.recordId + '_' + string(request.resource.data.version)
+        && request.resource.data.ledgerId == lid && request.resource.data.actorId == request.auth.uid && request.resource.data.at == request.time
+        && auditMatches(lid,request.resource.data);
+      allow update, delete: if false;
+    }
+    function auditMatches(lid,a) {
+      let path = /databases/$(database)/documents/ledgers/$(lid)/records/$(a.recordId);
+      let after = getAfter(path).data;
+      return after.version == a.version && after.data == a.after && after.action == a.action && after.updatedBy == a.actorId && after.updatedAt == request.time
+        && ((a.version == 1 && !exists(path) && a.before == null) || (a.version > 1 && get(path).data.version == a.version-1 && a.before == get(path).data.data));
+    }
+  }
+}

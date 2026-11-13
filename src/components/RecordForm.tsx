@@ -1,7 +1,11 @@
+import { localizedValidation } from '../i18n/validation';
+import { money, localDateISO, financialText } from '../i18n/format';
+import { useTranslation } from 'react-i18next';
+import { t } from '../i18n';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { FinancialData, FinancialRecord, Kind, Ledger, SplitMethod } from '../domain/types';
-import { inputMoney, money, parseMoney, parsePercent, split } from '../domain/finance';
+import { inputMoney, parseMoney, parsePercent, split } from '../domain/finance';
 import { db } from '../services/firebase';
 import { errorMessage } from '../services/errors';
 import { newRecordId, writeFinancial } from '../services/ledger';
@@ -21,12 +25,13 @@ export function RecordForm({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  useTranslation();
   const old = record?.data;
   const [recordId] = useState(() => record?.id || newRecordId(db!, ledger.id));
   const [type, setType] = useState<Kind>(old?.kind || kind);
   const [description, setDescription] = useState(old?.description || '');
   const [total, setTotal] = useState(old ? inputMoney(old.amount) : '');
-  const [date, setDate] = useState(old?.date || new Date().toLocaleDateString('en-CA'));
+  const [date, setDate] = useState(old?.date || localDateISO());
   const [payer, setPayer] = useState(old?.payerId || uid);
   const [receiver, setReceiver] = useState(
     old?.receiverId || ledger.memberIds.find((x) => x !== uid) || '',
@@ -122,14 +127,18 @@ export function RecordForm({
   const options = Object.entries(ledger.members).map(([id, m]) => (
     <option key={id} value={id}>
       {m.name}
-      {!ledger.memberIds.includes(id) ? ' (left group)' : ''}
+      {!ledger.memberIds.includes(id) ? ' ' + t('(left group)') : ''}
     </option>
   ));
   return (
-    <Dialog title={record ? 'Edit transaction' : 'Add a transaction'} onClose={onClose} busy={busy}>
-      <form onSubmit={(e) => void submit(e)} className="record-form">
+    <Dialog
+      title={record ? t('Edit transaction') : t('Add a transaction')}
+      onClose={onClose}
+      busy={busy}
+    >
+      <form {...localizedValidation} onSubmit={(e) => void submit(e)} className="record-form">
         <fieldset disabled={busy} className="form-body">
-          <div className="segmented" role="group" aria-label="Transaction type">
+          <div className="segmented" role="group" aria-label={t('Transaction type')}>
             {(['expense', 'loan', 'repayment'] as Kind[]).map((k) => (
               <button
                 type="button"
@@ -139,30 +148,35 @@ export function RecordForm({
                 className={type === k ? 'selected' : ''}
                 onClick={() => setType(k)}
               >
-                {k === 'expense' ? 'Expense' : k === 'loan' ? 'Direct loan' : 'Repayment'}
+                {k === 'expense' ? t('Expense') : k === 'loan' ? t('Direct loan') : t('Repayment')}
               </button>
             ))}
           </div>
           <label>
-            Description
+            {t('Description')}
             <input
               autoFocus
               required
               maxLength={120}
               placeholder={
                 type === 'expense'
-                  ? 'e.g. Sunday groceries'
+                  ? t('e.g. Sunday groceries')
                   : type === 'loan'
-                    ? 'e.g. Lent money for concert tickets'
-                    : 'e.g. Paid back for groceries'
+                    ? t('e.g. Lent money for concert tickets')
+                    : t('e.g. Paid back for groceries')
               }
-              value={description}
+              value={
+                old && description === old.description
+                  ? financialText(old, 'description')
+                  : description
+              }
               onChange={(e) => setDescription(e.target.value)}
             />
           </label>
           <div className="form-grid">
             <label>
-              Amount ({ledger.currency})
+              {t('Amount (')}
+              {ledger.currency})
               <input
                 required
                 inputMode="decimal"
@@ -172,26 +186,26 @@ export function RecordForm({
               />
             </label>
             <label>
-              Date
+              {t('Date')}
               <input required type="date" value={date} onChange={(e) => setDate(e.target.value)} />
             </label>
             <label>
-              {type === 'loan' ? 'Lent by' : 'Paid by'}
+              {type === 'loan' ? t('Lent by') : t('Paid by')}
               <select value={payer} onChange={(e) => setPayer(e.target.value)}>
                 {options}
               </select>
             </label>
             {type !== 'expense' ? (
               <label>
-                {type === 'loan' ? 'Borrowed by' : 'Received by'}
+                {type === 'loan' ? t('Borrowed by') : t('Received by')}
                 <select required value={receiver} onChange={(e) => setReceiver(e.target.value)}>
-                  <option value="">Select member</option>
+                  <option value="">{t('Select member')}</option>
                   {options}
                 </select>
               </label>
             ) : (
               <label>
-                Split method
+                {t('Split method')}
                 <select
                   value={method}
                   onChange={(e) => {
@@ -199,18 +213,18 @@ export function RecordForm({
                     setValues({});
                   }}
                 >
-                  <option value="equal">Equally</option>
-                  <option value="exact">Exact amounts</option>
-                  <option value="percentage">Percentages</option>
+                  <option value="equal">{t('Equally')}</option>
+                  <option value="exact">{t('Exact amounts')}</option>
+                  <option value="percentage">{t('Percentages')}</option>
                 </select>
               </label>
             )}
           </div>
           {type === 'expense' && (
             <fieldset>
-              <legend>Split between</legend>
+              <legend>{t('Split between')}</legend>
               <p className="field-help">
-                The payer can be excluded. Remainders are allocated in UID order.
+                {t('The payer can be excluded. Remainders are allocated in UID order.')}
               </p>
               {Object.entries(ledger.members).map(([id, m]) => (
                 <div className="split-row" key={id}>
@@ -228,11 +242,14 @@ export function RecordForm({
                   {ids.includes(id) && method !== 'equal' && (
                     <label className="inline-input">
                       <span className="sr-only">
-                        {m.name} {method === 'percentage' ? 'percentage' : 'share'}
+                        {m.name} {method === 'percentage' ? t('percentage') : t('share')}
                       </span>
                       <input
                         inputMode="decimal"
-                        aria-label={`${m.name} ${method === 'percentage' ? 'percentage' : 'share'}`}
+                        aria-label={t(
+                          method === 'percentage' ? '{{name}} percentage' : '{{name}} share',
+                          { name: m.name },
+                        )}
                         placeholder="0"
                         value={values[id] || ''}
                         onChange={(e) => setValues({ ...values, [id]: e.target.value })}
@@ -247,35 +264,37 @@ export function RecordForm({
                   </span>
                 </div>
               ))}
-              {previewError && <p className="field-help">{previewError}</p>}
+              {previewError && <p className="field-help">{t(previewError)}</p>}
             </fieldset>
           )}
           {type === 'repayment' && (
             <div className="alert">
-              Record money that has actually changed hands. This reduces the payer’s net debt; it
-              does not create an expense. Overpayments can reverse a balance.
+              {t(
+                'Record money that has actually changed hands. This reduces the payer’s net debt; it does not create an expense. Overpayments can reverse a balance.',
+              )}
             </div>
           )}
           <label>
-            Notes <span className="muted">(optional)</span>
+            {t('Notes') + ' '}
+            <span className="muted">{t('(optional)')}</span>
             <textarea
               maxLength={2000}
               rows={2}
-              value={notes}
+              value={old && notes === old.notes ? financialText(old, 'notes') : notes}
               onChange={(e) => setNotes(e.target.value)}
             />
           </label>
           {error && (
             <div role="alert" className="alert error">
-              {error}
+              {t(error)}
             </div>
           )}
           <div className="dialog-footer">
             <button type="button" className="secondary" disabled={busy} onClick={onClose}>
-              Cancel
+              {t('Cancel')}
             </button>
             <button className="primary" disabled={busy}>
-              {busy ? 'Saving to server…' : record ? 'Save changes' : 'Save transaction'}
+              {busy ? t('Saving to server…') : record ? t('Save changes') : t('Save transaction')}
             </button>
           </div>
         </fieldset>

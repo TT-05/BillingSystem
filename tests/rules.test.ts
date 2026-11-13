@@ -473,7 +473,7 @@ describe('secure invitations', () => {
     const ledger = { ...(await getDoc(doc(a, 'ledgers', 'home'))).data(), id: 'home' } as Ledger;
     const id = await invite(a, ledger, 'x@example.com', 'a');
     expect(id).toMatch(/^[a-f0-9]{64}$/);
-    await assertFails(invite(b, ledger, 'x@example.com', 'b'));
+    await expect(invite(b, ledger, 'x@example.com', 'b')).rejects.toThrow('Only the ledger owner');
     await assertFails(getDoc(doc(b, 'invitations', id)));
   });
   it('verified intended recipient joins atomically and token cannot be replayed', async () => {
@@ -482,7 +482,9 @@ describe('secure invitations', () => {
       acceptInvitation(outsider, token, { ...member('x'), emailVerified: true }),
     );
     expect((await getDoc(doc(outsider, 'ledgers', 'home'))).data()?.memberIds).toContain('x');
-    await assertFails(acceptInvitation(outsider, token, { ...member('x'), emailVerified: true }));
+    await expect(
+      acceptInvitation(outsider, token, { ...member('x'), emailVerified: true }),
+    ).rejects.toThrow('already used');
   });
   it.each([
     { revoked: true },
@@ -491,7 +493,12 @@ describe('secure invitations', () => {
     { email: 'different@example.com' },
   ])('rejects invitation outside constraints %j', async (override) => {
     await invitation(override);
-    await assertFails(acceptInvitation(outsider, token, { ...member('x'), emailVerified: true }));
+    if (override.revoked || override.usedBy)
+      await expect(
+        acceptInvitation(outsider, token, { ...member('x'), emailVerified: true }),
+      ).rejects.toThrow('revoked or already used');
+    else
+      await assertFails(acceptInvitation(outsider, token, { ...member('x'), emailVerified: true }));
   });
   it('rejects unverified email, membership without redemption, and standalone redemption', async () => {
     await invitation();

@@ -17,14 +17,16 @@
     "test:integration": "firebase emulators:exec --project demo-settle --only auth,firestore 'npm run test:rules'",
     "test:e2e": "firebase emulators:exec --project demo-settle --only auth,firestore 'playwright test'",
     "preview": "vite preview --host 127.0.0.1",
-    "deploy": "firebase deploy --only firestore:rules,firestore:indexes,hosting",
+    "deploy": "firebase deploy --project bill9206 --only firestore:rules,firestore:indexes && firebase deploy --project bill9206 --only hosting",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "firebase": "^12.0.0",
+    "i18next": "^27.1.1",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "react-i18next": "^18.0.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

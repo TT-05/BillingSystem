@@ -1,3 +1,7 @@
+import { localizedValidation } from '../i18n/validation';
+import { LanguageSelector } from './LanguageSelector';
+import { useTranslation } from 'react-i18next';
+import { t } from '../i18n';
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import {
@@ -13,6 +17,7 @@ import { errorMessage } from '../services/errors';
 import { saveProfile } from '../services/ledger';
 import { signInWithGoogle } from '../services/googleAuth';
 export function AuthScreen({ invited }: { invited: boolean }) {
+  useTranslation();
   const [mode, setMode] = useState<'login' | 'register' | 'reset'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -80,50 +85,51 @@ export function AuthScreen({ invited }: { invited: boolean }) {
           settle<span className="brand-dot">.</span>
         </a>
         <div>
-          <span className="eyebrow light">LESS MATH. MORE LIVING.</span>
+          <span className="eyebrow light">{t('LESS MATH. MORE LIVING.')}</span>
           <h1>
-            Good friends.
+            {t('Good friends.')}
             <br />
-            Clear balances.
+            {t('Clear balances.')}
           </h1>
           <p>
-            A little clarity for the things you share.
+            {t('A little clarity for the things you share.')}
             <br />
-            Split fairly, settle simply, stay in sync.
+            {t('Split fairly, settle simply, stay in sync.')}
           </p>
           <div className="story-card">
             <span className="story-check">
               <Check size={19} />
             </span>
             <div>
-              One less thing to keep track of.
-              <small>Private ledgers. Every change accounted for.</small>
+              {t('One less thing to keep track of.')}
+              <small>{t('Private ledgers. Every change accounted for.')}</small>
             </div>
           </div>
         </div>
-        <span className="auth-foot">MADE FOR THE PEOPLE YOU SHARE LIFE WITH</span>
+        <span className="auth-foot">{t('MADE FOR THE PEOPLE YOU SHARE LIFE WITH')}</span>
       </div>
       <main className="auth-form">
         <div className="auth-inner">
-          <span className="eyebrow">YOUR SHARED SPACE</span>
+          <LanguageSelector />
+          <span className="eyebrow">{t('YOUR SHARED SPACE')}</span>
           <h2>
             {mode === 'register'
-              ? 'Make yourself at home.'
+              ? t('Make yourself at home.')
               : mode === 'reset'
-                ? 'Let’s get you back in.'
-                : 'Welcome back.'}
+                ? t('Let’s get you back in.')
+                : t('Welcome back.')}
           </h2>
           <p className="muted">
             {invited
-              ? 'Sign in with the invited email to open your invitation.'
+              ? t('Sign in with the invited email to open your invitation.')
               : mode === 'register'
-                ? 'Create an account. Start sharing with confidence.'
-                : 'Your expenses, all in one peaceful place.'}
+                ? t('Create an account. Start sharing with confidence.')
+                : t('Your expenses, all in one peaceful place.')}
           </p>
-          <form onSubmit={(e) => void submit(e)}>
+          <form {...localizedValidation} onSubmit={(e) => void submit(e)}>
             {mode === 'register' && (
               <label>
-                Display name
+                {t('Display name')}
                 <input
                   required
                   maxLength={80}
@@ -134,7 +140,7 @@ export function AuthScreen({ invited }: { invited: boolean }) {
               </label>
             )}
             <label>
-              Email address
+              {t('Email address')}
               <input
                 type="email"
                 autoComplete="email"
@@ -145,7 +151,7 @@ export function AuthScreen({ invited }: { invited: boolean }) {
             </label>
             {mode !== 'reset' && (
               <label>
-                Password
+                {t('Password')}
                 <input
                   type="password"
                   autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
@@ -158,29 +164,29 @@ export function AuthScreen({ invited }: { invited: boolean }) {
             )}
             {error && (
               <div className="alert error" role="alert">
-                {error}
+                {t(error)}
               </div>
             )}
             {notice && (
               <div className="alert success" role="status">
-                {notice}
+                {t(notice)}
               </div>
             )}
             <button className="primary full" disabled={busy}>
               {busy
-                ? 'Please wait…'
+                ? t('Please wait…')
                 : mode === 'register'
-                  ? 'Create account'
+                  ? t('Create account')
                   : mode === 'reset'
-                    ? 'Send reset link'
-                    : 'Sign in'}
+                    ? t('Send reset link')
+                    : t('Sign in')}
               <ArrowUpRight size={18} />
             </button>
           </form>
           {mode !== 'reset' && (
             <>
               <div className="auth-divider">
-                <span>or</span>
+                <span>{t('or')}</span>
               </div>
               <button
                 type="button"
@@ -191,11 +197,12 @@ export function AuthScreen({ invited }: { invited: boolean }) {
                 <span aria-hidden="true" className="google-mark">
                   G
                 </span>{' '}
-                Continue with Google
+                {t('Continue with Google')}
               </button>
               <p className="field-help google-help">
-                Use your existing sign-in method if this email already has an account. You can link
-                Google from Account &amp; profile.
+                {t(
+                  'Use your existing sign-in method if this email already has an account. You can link Google from Account & profile.',
+                )}
               </p>
             </>
           )}
@@ -207,13 +214,19 @@ export function AuthScreen({ invited }: { invited: boolean }) {
               }}
             >
               {mode === 'register'
-                ? 'Already have an account? Sign in'
-                : 'New here? Create an account'}
+                ? t('Already have an account? Sign in')
+                : t('New here? Create an account')}
             </button>
-            {mode === 'login' && <button onClick={() => setMode('reset')}>Forgot password?</button>}
-            {mode === 'reset' && <button onClick={() => setMode('login')}>Back to sign in</button>}
+            {mode === 'login' && (
+              <button onClick={() => setMode('reset')}>{t('Forgot password?')}</button>
+            )}
+            {mode === 'reset' && (
+              <button onClick={() => setMode('login')}>{t('Back to sign in')}</button>
+            )}
           </div>
-          {usingEmulators && <div className="emulator-label">LOCAL EMULATOR · test data only</div>}
+          {usingEmulators && (
+            <div className="emulator-label">{t('LOCAL EMULATOR · test data only')}</div>
+          )}
         </div>
       </main>
     </div>

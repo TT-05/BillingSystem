@@ -63,7 +63,7 @@ export interface Invitation {
   email: string;
   createdBy: string;
   createdAt: Timestamp;
-  expiresAt: Timestamp;
+  expiresAt?: Timestamp; // Legacy tokens; new tokens use createdAt + seven days.
   usedBy: string | null;
   usedAt: Timestamp | null;
   revoked: boolean;

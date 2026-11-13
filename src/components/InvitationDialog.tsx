@@ -1,10 +1,12 @@
+import { useTranslation } from 'react-i18next';
+import { t } from '../i18n';
+import { invitationExpiresAt } from '../domain/invitations';
 import { useState, useEffect } from 'react';
 import { getDoc, doc } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
 import type { Invitation } from '../domain/types';
 import { db } from '../services/firebase';
 import { acceptInvitation } from '../services/ledger';
-import { errorMessage } from '../services/errors';
 import { dateText } from '../domain/display';
 import { Dialog } from './Dialog';
 export function InvitationDialog({
@@ -18,6 +20,7 @@ export function InvitationDialog({
   onClose: () => void;
   onJoined: (id: string) => void;
 }) {
+  useTranslation();
   const [invitation, setInvitation] = useState<Invitation | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -36,8 +39,11 @@ export function InvitationDialog({
           else setError('Invitation not found.');
         }
       })
-      .catch((e) => {
-        if (live) setError(errorMessage(e) + ' Sign in with the exact email that was invited.');
+      .catch(() => {
+        if (live)
+          setError(
+            'Invitation unavailable. Sign in with the invited email or ask the owner for a new link.',
+          );
       })
       .finally(() => {
         if (live) setLoaded(true);
@@ -47,56 +53,73 @@ export function InvitationDialog({
     };
   }, [token]);
   const [now] = useState(() => Date.now());
-  const expired = invitation && invitation.expiresAt.toMillis() < now;
+  const expired = invitation && invitationExpiresAt(invitation).toMillis() < now;
   return (
-    <Dialog title="You’re invited." onClose={onClose} busy={busy}>
+    <Dialog title={t('You’re invited.')} onClose={onClose} busy={busy}>
       {!loaded ? (
-        <p>Opening invitation…</p>
+        <p>{t('Opening invitation…')}</p>
       ) : invitation ? (
         <>
           <p>
-            Join <strong>{invitation.ledgerName}</strong> ({invitation.currency}) and start sharing.
+            {t('Join {{ledger}} ({{currency}}) and start sharing.', {
+              ledger: invitation.ledgerName,
+              currency: invitation.currency,
+            })}
           </p>
           <p className="muted">
-            For {invitation.email} · expires {dateText(invitation.expiresAt)}
+            {t('For') + ' '}
+            {invitation.email} {' ' + t('· expires') + ' '}
+            {dateText(invitationExpiresAt(invitation))}
           </p>
-          {(expired || invitation.revoked || invitation.usedBy) && (
+          {(invitation.revoked || invitation.usedBy) && (
             <div className="alert error">
-              This invitation is expired, revoked, or already used. Ask the owner for a new one.
+              {t(
+                'This invitation is expired, revoked, or already used. Ask the owner for a new one.',
+              )}
             </div>
+          )}
+          {expired && !invitation.revoked && !invitation.usedBy && (
+            <p className="field-help">
+              {t(
+                'This link appears expired based on your device clock. The server checks expiry when you accept.',
+              )}
+            </p>
           )}
           {!user.emailVerified && (
             <p className="alert">
-              Verify your email first. Close this dialog, use the verification actions above, then
-              reopen the invitation link.
+              {t(
+                'Verify your email first. Close this dialog, use the verification actions above, then reopen the invitation link.',
+              )}
             </p>
           )}
         </>
       ) : null}
       {error && (
         <div className="alert error" role="alert">
-          {error}
+          {t(error)}
         </div>
       )}
       <div className="dialog-footer">
         <button className="secondary" disabled={busy} onClick={onClose}>
-          Close
+          {t('Close')}
         </button>
         {invitation && (
           <button
             className="primary"
-            disabled={
-              busy || !user.emailVerified || !!expired || invitation.revoked || !!invitation.usedBy
-            }
+            disabled={busy || !user.emailVerified || invitation.revoked || !!invitation.usedBy}
             onClick={() => {
               setBusy(true);
               void acceptInvitation(db!, token, user)
                 .then(onJoined)
-                .catch((e) => setError(errorMessage(e)))
+                .catch(() =>
+                  setError(
+                    'Unable to accept invitation. Check the invited email, verification, expiry, membership capacity, and connection; ask the owner for a new link if needed.',
+                  ),
+                )
                 .finally(() => setBusy(false));
             }}
           >
-            {busy ? 'Joining…' : 'Accept invitation'}
+            {busy ? t('Joining…') : t('Accept invitation')}
           </button>
         )}
       </div>
