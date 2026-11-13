@@ -4,7 +4,7 @@ import { t } from '../i18n';
 import { useState } from 'react';
 import { updateProfile } from 'firebase/auth';
 import type { User } from 'firebase/auth';
-import { db } from '../services/firebase';
+import { auth, db } from '../services/firebase';
 import { saveProfile } from '../services/ledger';
 import { errorMessage } from '../services/errors';
 import { Dialog } from './Dialog';
@@ -32,7 +32,7 @@ export function Profile({
     setError('');
     setNotice('');
     try {
-      await linkGoogleAccount(user);
+      await linkGoogleAccount(user, auth!);
       setGoogleLinked(true);
       setNotice('Google connected. Both sign-in methods use the same account and ledger history.');
     } catch (e) {

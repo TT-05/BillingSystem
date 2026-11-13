@@ -3,6 +3,7 @@ export default defineConfig({
   test: {
     include: [
       'tests/rules.test.ts',
+      'tests/payments.rules.test.ts',
       'tests/auth.integration.test.ts',
       'tests/membership.regression.test.ts',
       'tests/invitations.regression.test.ts',

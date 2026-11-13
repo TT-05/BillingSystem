@@ -73,3 +73,31 @@ export interface Settlement {
   receiverId: string;
   amount: number;
 }
+
+export type PaymentStatus = 'pending' | 'confirmed' | 'rejected' | 'cancelled';
+export interface PaymentRequest {
+  id: string;
+  ledgerId: string;
+  payerId: string;
+  receiverId: string;
+  amount: number;
+  currency: Currency;
+  date: string;
+  ledgerRevision: number;
+  status: PaymentStatus;
+  version: number;
+  createdBy: string;
+  createdAt: Timestamp;
+  updatedBy: string;
+  updatedAt: Timestamp;
+}
+export interface PaymentEvent {
+  id: string;
+  ledgerId: string;
+  requestId: string;
+  version: number;
+  actorId: string;
+  at: Timestamp;
+  before: Omit<PaymentRequest, 'id'> | null;
+  after: Omit<PaymentRequest, 'id'>;
+}

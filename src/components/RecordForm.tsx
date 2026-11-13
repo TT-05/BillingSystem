@@ -139,7 +139,7 @@ export function RecordForm({
       <form {...localizedValidation} onSubmit={(e) => void submit(e)} className="record-form">
         <fieldset disabled={busy} className="form-body">
           <div className="segmented" role="group" aria-label={t('Transaction type')}>
-            {(['expense', 'loan', 'repayment'] as Kind[]).map((k) => (
+            {(['expense', 'loan'] as Kind[]).map((k) => (
               <button
                 type="button"
                 key={k}

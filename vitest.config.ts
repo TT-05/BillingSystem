@@ -3,6 +3,8 @@ export default defineConfig({
   test: {
     include: [
       'tests/finance.test.ts',
+      'tests/summary.test.ts',
+      'tests/redirect.test.ts',
       'tests/auth.test.ts',
       'tests/config.test.ts',
       'tests/i18n.test.ts',

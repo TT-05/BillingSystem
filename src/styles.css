@@ -2049,3 +2049,135 @@ tr:last-child td {
     white-space: normal;
   }
 }
+
+.payment-summary-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.payment-summary-grid .personal-card {
+  grid-column: auto;
+  min-width: 0;
+}
+.payment-summary-grid .big-amount {
+  font-size: clamp(24px, 2.9vw, 40px);
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+}
+.debt-summary.payables {
+  background: #715541;
+}
+.payment-panel {
+  margin-top: 24px;
+  scroll-margin-top: 16px;
+}
+.payment-panel .pill {
+  white-space: normal;
+  text-align: center;
+}
+.payment-request {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  padding: 20px 24px;
+  border-top: 1px solid var(--line, #e3e8df);
+}
+.payment-request > div {
+  min-width: 0;
+}
+.payment-request strong,
+.payment-request p {
+  overflow-wrap: anywhere;
+}
+.payment-request p {
+  margin: 7px 0;
+  font-size: 13px;
+}
+.payment-status {
+  display: inline-block;
+  border-radius: 5px;
+  padding: 4px 8px;
+  font-size: 12px;
+  background: #edf0e9;
+}
+.payment-status.pending {
+  background: #f7efd9;
+  color: #715c28;
+}
+.payment-status.confirmed {
+  background: #e9f3e4;
+  color: #25553d;
+}
+.payment-status.rejected,
+.payment-status.cancelled {
+  background: #f3e9e4;
+  color: #754634;
+}
+.payment-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.payment-actions button {
+  min-height: 44px;
+}
+.payment-empty {
+  padding: 16px 24px 24px;
+  color: var(--muted);
+}
+.payment-history {
+  padding: 16px 24px;
+}
+.payment-history li {
+  margin-bottom: 18px;
+}
+.payment-history p {
+  color: var(--muted);
+  font-size: 13px;
+}
+@media (max-width: 1200px) {
+  .payment-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 650px) {
+  .payment-summary-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .payment-request {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 18px;
+  }
+  .payment-actions {
+    justify-content: flex-start;
+  }
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+  .dialog {
+    max-width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+  }
+  .dialog-head h2 {
+    overflow-wrap: anywhere;
+  }
+  .settlement-row button {
+    min-height: 44px;
+  }
+}
+@media (max-width: 650px) {
+  .sidebar-bottom .profile-button,
+  .sidebar-bottom .logout {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .sidebar-bottom .logout {
+    font-size: 12px;
+  }
+  .language-selector select {
+    font-size: 16px;
+  }
+}

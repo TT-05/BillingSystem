@@ -1,3 +1,4 @@
+import { newPaymentId, requestPayment, resolvePayment } from '../src/services/payments';
 import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -340,88 +341,69 @@ describe('atomic financial writes and audit integrity', () => {
     batch.update(doc(a, 'ledgers', 'home'), { revision: increment(1) });
     await assertFails(batch.commit());
   });
-  it('idempotent retries do not duplicate repayments, corrections are audited', async () => {
+  it('idempotent retries do not duplicate loans, and corrections remain audited', async () => {
     const p = payload({ kind: 'loan', participants: [], shares: {}, weights: {}, receiverId: 'b' });
     await write(a, 'loan', p);
-    const rep = payload({
-      kind: 'repayment',
-      amount: 3000,
-      payerId: 'b',
-      receiverId: 'a',
-      participants: [],
-      shares: {},
-      weights: {},
-    });
-    await write(b, 'rep', rep, 0, 'b');
-    await write(b, 'rep', rep, 0, 'b');
-    expect((await getDocs(collection(a, 'ledgers', 'home', 'records'))).size).toBe(2);
-    await write(b, 'rep', { ...rep, amount: 4000 }, 1, 'b', 'edit');
-    const all = await getDocs(collection(a, 'ledgers', 'home', 'records'));
+    await write(a, 'loan', p);
+    expect((await getDocs(collection(a, 'ledgers', 'home', 'records'))).size).toBe(1);
+    await write(a, 'loan', { ...p, amount: 5000 }, 1, 'a', 'edit');
+    expect((await getDocs(collection(a, 'ledgers', 'home', 'audit'))).size).toBe(2);
     expect(
       balances(
-        all.docs.map((d) => d.data() as FinancialRecord),
+        (await getDocs(collection(a, 'ledgers', 'home', 'records'))).docs.map(
+          (d) => d.data() as FinancialRecord,
+        ),
         ['a', 'b', 'c'],
       ),
     ).toEqual({ a: 5000, b: -5000, c: 0 });
   });
-  it('requires fresh balances for settlement confirmation', async () => {
+  it('requires fresh balances for both debtor request and creditor confirmation', async () => {
     await write();
-    const data = payload({
-      kind: 'repayment',
-      amount: 3000,
+    const id = newPaymentId();
+    const input = {
+      id,
+      ledgerId: 'home',
       payerId: 'b',
       receiverId: 'a',
-      participants: [],
-      shares: {},
-      weights: {},
-      settlementKey: 'settlement',
-    });
-    await expect(
-      writeFinancial(b, {
-        ledgerId: 'home',
-        id: 'settlement',
-        data,
-        actorId: 'b',
-        expectedVersion: 0,
-        expectedLedgerRevision: 1,
-        action: 'settle',
-      }),
-    ).rejects.toThrow('Balances changed');
-    await writeFinancial(b, {
-      ledgerId: 'home',
-      id: 'settlement',
-      data,
+      amount: 3000,
       actorId: 'b',
-      expectedVersion: 0,
-      expectedLedgerRevision: 2,
-      action: 'settle',
-    });
+      expectedLedgerRevision: 1,
+    };
+    await expect(requestPayment(b, input)).rejects.toThrow('Balances changed');
+    await requestPayment(b, { ...input, expectedLedgerRevision: 2 });
+    await write(
+      a,
+      'r1',
+      payload({ amount: 12000, shares: { a: 4000, b: 4000, c: 4000 } }),
+      1,
+      'a',
+      'edit',
+    );
+    await expect(resolvePayment(a, 'home', id, 'a', 'confirmed')).rejects.toThrow(
+      'Balances changed',
+    );
   });
 });
 describe('settlement retries and membership bounds', () => {
-  it('retries a committed settlement with the original revision without duplication', async () => {
+  it('cannot replay a committed settlement or reopen it with its original revision', async () => {
     await write();
-    const data = payload({
-      kind: 'repayment',
-      amount: 3000,
+    const id = newPaymentId();
+    const input = {
+      id,
+      ledgerId: 'home',
       payerId: 'b',
       receiverId: 'a',
-      participants: [],
-      shares: {},
-      weights: {},
-      settlementKey: 'settlement',
-    });
-    const input = {
-      ledgerId: 'home',
-      id: 'settlement',
-      data,
+      amount: 3000,
       actorId: 'b',
-      expectedVersion: 0,
       expectedLedgerRevision: 2,
-      action: 'settle' as const,
     };
-    await writeFinancial(b, input);
-    await writeFinancial(b, { ...input, data: { ...data, shares: {}, weights: {} } });
+    await requestPayment(b, input);
+    await requestPayment(b, input);
+    await resolvePayment(a, 'home', id, 'a', 'confirmed');
+    await expect(resolvePayment(a, 'home', id, 'a', 'confirmed')).rejects.toThrow(
+      'already been processed',
+    );
+    await expect(requestPayment(b, input)).rejects.toThrow('already been processed');
     expect((await getDocs(collection(a, 'ledgers', 'home', 'audit'))).size).toBe(2);
   });
   it('rejects a sixth historical member even with a valid targeted invitation', async () => {
@@ -544,7 +526,7 @@ it('allows a former member to rejoin a ledger with five historical UIDs', async 
   expect((await getDoc(doc(b, 'ledgers', 'home'))).data()?.memberIds).toContain('b');
 });
 
-it('rejects an old recommendation even when its UI has already seen the new ledger revision', async () => {
+it('rejects a non-recommended transfer even when the UI has a fresh ledger revision', async () => {
   await write();
   await write(
     a,
@@ -554,25 +536,15 @@ it('rejects an old recommendation even when its UI has already seen the new ledg
     'a',
     'edit',
   );
-  const data = payload({
-    kind: 'repayment',
-    amount: 3000,
-    payerId: 'b',
-    receiverId: 'a',
-    participants: [],
-    shares: {},
-    weights: {},
-    settlementKey: 'stale-plan',
-  });
   await expect(
-    writeFinancial(b, {
+    requestPayment(b, {
+      id: newPaymentId(),
       ledgerId: 'home',
-      id: 'stale-plan',
-      data,
+      payerId: 'b',
+      receiverId: 'c',
+      amount: 3000,
       actorId: 'b',
-      expectedVersion: 0,
       expectedLedgerRevision: 3,
-      action: 'settle',
     }),
   ).rejects.toThrow('Balances changed');
   expect((await getDocs(collection(a, 'ledgers', 'home', 'records'))).size).toBe(1);

@@ -100,6 +100,86 @@ service cloud.firestore {
       );
       allow delete: if false;
     }
+    function paymentPath(lid,pid) { return /databases/$(database)/documents/ledgers/$(lid)/payments/$(pid); }
+    function slotPath(lid,payer,receiver) { return /databases/$(database)/documents/ledgers/$(lid)/paymentSlots/$(payer)/creditors/$(receiver); }
+    function pairedPaymentAudit(lid,pid,d,before) {
+      let a = getAfter(/databases/$(database)/documents/ledgers/$(lid)/paymentAudit/$(pid + '_' + string(d.version))).data;
+      return a.ledgerId == lid && a.requestId == pid && a.version == d.version
+        && a.actorId == request.auth.uid && a.at == request.time && a.before == before && a.after == d;
+    }
+    function paymentValid(lid,d) {
+      let l = get(ledgerPath(lid)).data;
+      return d.keys().hasOnly(['ledgerId','payerId','receiverId','amount','currency','date','ledgerRevision','status','version','createdBy','createdAt','updatedBy','updatedAt'])
+        && d.ledgerId == lid && positive(d.amount) && d.currency == l.currency
+        && d.payerId in l.memberIds && d.receiverId in l.memberIds && d.payerId != d.receiverId
+        && d.date is string && d.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && d.ledgerRevision is int && d.version is int && d.ledgerRevision == l.revision && d.updatedAt == request.time && d.updatedBy == request.auth.uid;
+    }
+    function slotAvailable(lid,payer,receiver) {
+      let slot = slotPath(lid,payer,receiver);
+      return !exists(slot) || get(paymentPath(lid,get(slot).data.requestId)).data.status != 'pending';
+    }
+    function paymentRepayment(lid,pid,p) {
+      let path = /databases/$(database)/documents/ledgers/$(lid)/records/$(pid);
+      let r = getAfter(path).data;
+      return !exists(path) && r.version == 1 && r.action == 'settle' && r.createdBy == request.auth.uid
+        && r.data.kind == 'repayment' && r.data.settlementKey == pid && r.data.deleted == false
+        && r.data.payerId == p.payerId && r.data.receiverId == p.receiverId
+        && r.data.amount == p.amount && r.data.currency == p.currency && r.data.date == p.date
+        && getAfter(ledgerPath(lid)).data.revision == p.ledgerRevision + 1;
+    }
+    match /ledgers/{lid}/payments/{pid} {
+      allow read: if member(lid);
+      allow create: if member(lid) && pid.matches('^[a-f0-9]{64}$') && paymentValid(lid,request.resource.data)
+        && request.resource.data.payerId == request.auth.uid && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdAt == request.time && request.resource.data.version == 1 && request.resource.data.status == 'pending'
+        && slotAvailable(lid,request.resource.data.payerId,request.resource.data.receiverId)
+        && getAfter(slotPath(lid,request.resource.data.payerId,request.resource.data.receiverId)).data.requestId == pid
+        && pairedPaymentAudit(lid,pid,request.resource.data,null);
+      allow update: if member(lid) && resource.data.status == 'pending' && resource.data.version == 1
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','version','updatedBy','updatedAt'])
+        && request.resource.data.version is int && request.resource.data.version == 2 && request.resource.data.updatedBy == request.auth.uid && request.resource.data.updatedAt == request.time
+        && pairedPaymentAudit(lid,pid,request.resource.data,resource.data)
+        && ((request.resource.data.status == 'cancelled' && request.auth.uid == resource.data.payerId)
+          || (request.resource.data.status == 'rejected' && request.auth.uid == resource.data.receiverId)
+          || (request.resource.data.status == 'confirmed' && request.auth.uid == resource.data.receiverId
+            && paymentValid(lid,request.resource.data) && paymentRepayment(lid,pid,resource.data)));
+      allow delete: if false;
+    }
+    match /ledgers/{lid}/paymentSlots/{payer}/creditors/{receiver} {
+      allow read: if member(lid);
+      allow create, update: if member(lid) && request.auth.uid == payer
+        && request.resource.data.keys().hasOnly(['requestId']) && request.resource.data.requestId.matches('^[a-f0-9]{64}$')
+        && slotAvailable(lid,payer,receiver)
+        && !exists(paymentPath(lid,request.resource.data.requestId))
+        && getAfter(paymentPath(lid,request.resource.data.requestId)).data.status == 'pending'
+        && getAfter(paymentPath(lid,request.resource.data.requestId)).data.payerId == payer
+        && getAfter(paymentPath(lid,request.resource.data.requestId)).data.receiverId == receiver;
+      allow delete: if false;
+    }
+    match /ledgers/{lid}/paymentAudit/{aid} {
+      allow read: if member(lid);
+      allow create: if member(lid) && request.resource.data.keys().hasOnly(['ledgerId','requestId','version','actorId','at','before','after'])
+        && request.resource.data.ledgerId == lid && aid == request.resource.data.requestId + '_' + string(request.resource.data.version)
+        && request.resource.data.actorId == request.auth.uid && request.resource.data.at == request.time
+        && request.resource.data.after == getAfter(paymentPath(lid,request.resource.data.requestId)).data
+        && request.resource.data.after.version == request.resource.data.version && request.resource.data.after.updatedBy == request.auth.uid
+        && request.resource.data.after.updatedAt == request.time
+        && ((request.resource.data.version == 1 && !exists(paymentPath(lid,request.resource.data.requestId)) && request.resource.data.before == null)
+          || (request.resource.data.version == 2 && request.resource.data.before == get(paymentPath(lid,request.resource.data.requestId)).data
+            && request.resource.data.before.version == 1 && request.resource.data.before.status == 'pending'));
+      allow update, delete: if false;
+    }
+    function approvedRepayment(lid,rid,d) {
+      let before = get(paymentPath(lid,rid)).data;
+      let after = getAfter(paymentPath(lid,rid)).data;
+      return before.status == 'pending' && after.status == 'confirmed' && after.version == 2
+        && before.receiverId == request.auth.uid && after.updatedBy == request.auth.uid && after.updatedAt == request.time
+        && d.action == 'settle' && d.data.settlementKey == rid
+        && d.data.payerId == before.payerId && d.data.receiverId == before.receiverId
+        && d.data.amount == before.amount && d.data.currency == before.currency && d.data.date == before.date
+        && before.ledgerRevision == get(ledgerPath(lid)).data.revision;
+    }
     function allocation(d) {
       return d.splitMethod == 'equal' ? equalParts(d) : (d.splitMethod == 'exact' ? exactParts(d) : percentageParts(d));
     }
@@ -199,10 +279,11 @@ service cloud.firestore {
       allow create: if member(lid) && envelope(lid,request.resource.data)
         && request.resource.data.version == 1 && request.resource.data.createdBy == request.auth.uid && request.resource.data.createdAt == request.time
         && request.resource.data.data.deleted == false
-        && (request.resource.data.action == 'create' || (request.resource.data.action == 'settle' && request.resource.data.data.kind == 'repayment'))
+        && ((request.resource.data.data.kind != 'repayment' && request.resource.data.action == 'create')
+          || (request.resource.data.data.kind == 'repayment' && approvedRepayment(lid,rid,request.resource.data)))
         && (request.resource.data.data.settlementKey == '' || (request.resource.data.action == 'settle' && request.resource.data.data.settlementKey == rid))
         && pairedAudit(lid,rid,request.resource.data,null);
-      allow update: if member(lid) && envelope(lid,request.resource.data)
+      allow update: if member(lid) && resource.data.data.kind != 'repayment' && envelope(lid,request.resource.data)
         && request.resource.data.version == resource.data.version + 1
         && request.resource.data.createdBy == resource.data.createdBy && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.data.kind == resource.data.data.kind && request.resource.data.data.settlementKey == resource.data.data.settlementKey

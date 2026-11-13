@@ -2,7 +2,7 @@
 
 一个给朋友、室友使用的私人共享账本。React + TypeScript strict + Vite，使用 Firebase Authentication、Cloud Firestore、安全规则和 Firebase Hosting。没有付款处理、自动汇率转换、Cloud Functions 或付费扩展。
 
-最新邀请修复、双语使用说明与部署顺序：[INVITATIONS-I18N.md](docs/INVITATIONS-I18N.md)。最终测试：[TEST-RESULTS.md](docs/TEST-RESULTS.md)。本轮未部署。
+最新功能、双方付款确认、安全边界与发布说明：[TWO-PARTY-PAYMENTS.md](docs/TWO-PARTY-PAYMENTS.md)。最终测试：[TEST-RESULTS.md](docs/TEST-RESULTS.md)。本轮未部署。
 
 ## 已实现
 
@@ -12,7 +12,8 @@
 - 多账本、CAD / USD / CNY（默认 CAD）、所有者设置、成员自行退出。
 - 绑定收件邮箱的一次性 256 位邀请链接：7 天有效、要求已验证邮箱、支持撤销。链接需要自行分享，应用不会自动发送邀请邮件。
 - 支出：付款人可不参加分摊，支持等额、精确金额、百分比分摊；日期、备注、搜索、排序、类型筛选、详情。
-- 直接借款、部分或多次还款、结算建议、实际付款确认；纠正还款使用有审计记录的编辑或软删除。
+- 直接借款、结算建议，以及付款人发起、收款人确认的部分或多次还款；待确认/拒绝/取消不影响余额，已生效还款保留原数据并只读。
+- 仪表盘分别显示待收款与待付款的净额及建议转账笔数，随已确认财务变更实时更新。
 - 每次财务修改都有不可由客户端改写的版本历史、服务器时间、操作人 UID、完整前后快照和字段差异；软删除、恢复、恢复历史版本。
 - 实时更新、并发版本检查、稳定提交 ID、离线与错误提示、可访问对话框、桌面与窄屏布局。
 
@@ -20,7 +21,7 @@
 
 ## 快速开始：完全本地、无需 Firebase 账号
 
-前提：Node.js 22.12+（推荐最新 22 LTS）、npm、Java 21+。macOS 可通过 Homebrew 安装：
+前提：Node.js 22.12+（推荐最新 22 LTS）、npm、Java 21+。浏览器测试还需 `npx playwright install chromium webkit`（macOS 的 Chromium 场景使用已安装的 Google Chrome）。macOS 可通过 Homebrew 安装：
 
 ```sh
 brew install node@22 openjdk@21

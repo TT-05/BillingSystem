@@ -1,11 +1,10 @@
-import { balances, canonical, settlements } from '../domain/finance';
+import { canonical } from '../domain/finance';
 import {
   arrayRemove,
   arrayUnion,
   collection,
   doc,
   getDoc,
-  getDocsFromServer,
   increment,
   runTransaction,
   serverTimestamp,
@@ -138,6 +137,8 @@ export interface WriteInput {
 // A stable id is generated once when a form opens, so retrying an uncertain submission is idempotent.
 export async function writeFinancial(db: Firestore, input: WriteInput): Promise<void> {
   const { ledgerId, id, data, actorId, expectedVersion, action } = input;
+  if (data.kind === 'repayment' || action === 'settle')
+    throw new Error('Repayments require the debtor’s request and the creditor’s confirmation.');
   await runTransaction(db, async (tx) => {
     const ref = doc(db, 'ledgers', ledgerId, 'records', id);
     const old = await tx.get(ref);
@@ -161,30 +162,6 @@ export async function writeFinancial(db: Firestore, input: WriteInput): Promise<
       throw new Error(
         'This record changed while you were editing. Close the form and open the latest version. Your changes were not saved.',
       );
-    if (action === 'settle') {
-      if (input.expectedLedgerRevision === undefined)
-        throw new Error('Review the current settlement plan before confirming.');
-      // This query is deliberately server-only. It is guarded by the ledger document
-      // read above: every financial write must increment that revision under Rules.
-      // A concurrent write aborts this transaction, including collection phantoms.
-      const source = await getDocsFromServer(collection(db, 'ledgers', ledgerId, 'records'));
-      if (source.metadata.hasPendingWrites)
-        throw new Error('Some changes are still syncing. Review the updated settlement plan.');
-      const net = balances(
-        source.docs.map((d) => d.data() as FinancialRecord),
-        Object.keys(ledger.data()!.members),
-      );
-      const currentPlan = settlements(net);
-      if (
-        !currentPlan.some(
-          (s) =>
-            s.payerId === data.payerId &&
-            s.receiverId === data.receiverId &&
-            s.amount === data.amount,
-        )
-      )
-        throw new Error('Balances changed. Review the updated settlement plan before confirming.');
-    }
     const version = expectedVersion + 1;
     const at = serverTimestamp();
     const record = {

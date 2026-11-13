@@ -1,3 +1,5 @@
+> 最新付款确认版本：须先部署新 Rules，再发布 Hosting，最后让成员刷新旧页面。无需生产数据迁移或新付费服务。移动 Google 回退使用现有已授权的 bill9206.firebaseapp.com 别名，详细边界与命令见 [TWO-PARTY-PAYMENTS.md](TWO-PARTY-PAYMENTS.md)。本轮未部署。
+
 > 最新状态：项目已有线上版本。本轮邀请与双语修复尚未发布；注册 Web App/授权域/有效 API key 已再次只读验证。先部署新邀请规则再发布前端，具体见 [INVITATIONS-I18N.md](INVITATIONS-I18N.md)。以下初始搭建及旧验收记录保留作参考。
 
 # bill9206 配置与部署前交接

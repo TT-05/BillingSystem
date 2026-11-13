@@ -16,13 +16,19 @@ import { auth, authPersistence, db, usingEmulators } from '../services/firebase'
 import { errorMessage } from '../services/errors';
 import { saveProfile } from '../services/ledger';
 import { signInWithGoogle } from '../services/googleAuth';
-export function AuthScreen({ invited }: { invited: boolean }) {
+export function AuthScreen({
+  invited,
+  initialError = '',
+}: {
+  invited: boolean;
+  initialError?: string;
+}) {
   useTranslation();
   const [mode, setMode] = useState<'login' | 'register' | 'reset'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState(initialError);
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [googleReady, setGoogleReady] = useState(false);

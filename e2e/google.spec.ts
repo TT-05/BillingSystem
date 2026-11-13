@@ -9,7 +9,7 @@ async function openGoogle(page: Page, button = 'Continue with Google') {
   const popup = page.waitForEvent('popup');
   await page.getByRole('button', { name: button, exact: true }).click();
   const widget = await popup;
-  await expect(widget).toHaveURL(/^http:\/\/127\.0\.0\.1:9099\/emulator\/auth\/handler/);
+  await expect(widget).toHaveURL(/^http:\/\/127\.0\.0\.1:5173\/emulator\/auth\/handler/);
   await widget.waitForLoadState('domcontentloaded');
   return widget;
 }

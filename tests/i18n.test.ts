@@ -53,6 +53,7 @@ describe('complete bundled translations and language preferences', () => {
       'src/components/InvitationDialog.tsx',
       'src/components/LedgerForm.tsx',
       'src/components/RecordForm.tsx',
+      'src/components/Payments.tsx',
     ];
     for (const file of files)
       for (const match of readFileSync(file, 'utf8').matchAll(/\bt\(\s*'([^'\n]*)'\s*[,)]/g))

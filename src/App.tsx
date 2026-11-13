@@ -1,4 +1,6 @@
-import { money, number, percent, ledgerDate, localDateISO, financialText } from './i18n/format';
+import { PaymentForm, PaymentPanel } from './components/Payments';
+import { settlementSummary } from './domain/settlementSummary';
+import { money, number, percent, ledgerDate, financialText } from './i18n/format';
 import { LanguageSelector } from './components/LanguageSelector';
 import { useTranslation } from 'react-i18next';
 import { t } from './i18n';
@@ -28,8 +30,14 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
-import { auth, configurationError, db, usingEmulators } from './services/firebase';
-import { leaveLedger, newRecordId, writeFinancial } from './services/ledger';
+import {
+  auth,
+  authRedirectReady,
+  configurationError,
+  db,
+  usingEmulators,
+} from './services/firebase';
+import { leaveLedger, writeFinancial } from './services/ledger';
 import { errorMessage } from './services/errors';
 import { balances, changedFields, settlements } from './domain/finance';
 import type {
@@ -38,6 +46,7 @@ import type {
   FinancialRecord,
   Kind,
   Ledger,
+  PaymentRequest,
   Settlement,
 } from './domain/types';
 import { AuthScreen } from './components/Auth';
@@ -82,6 +91,10 @@ function AppContent({ user }: { user: User }) {
   const recordsState = useLive<FinancialRecord>(lid ? `records:${lid}` : '', () =>
     lid ? collection(db!, 'ledgers', lid, 'records') : null,
   );
+  const paymentState = useLive<PaymentRequest>(lid ? `payments:${lid}` : '', () =>
+    lid ? collection(db!, 'ledgers', lid, 'payments') : null,
+  );
+  const [payment, setPayment] = useState<Settlement | null>(null);
   const [historyLimit, setHistoryLimit] = useState(100);
   const auditState = useLive<AuditEvent>(lid ? `audit:${lid}:${number(historyLimit)}` : '', () =>
     lid
@@ -122,6 +135,7 @@ function AppContent({ user }: { user: User }) {
     localStorage.setItem('settle-ledger:' + user.uid, id);
     setDetail(null);
     setForm(null);
+    setPayment(null);
     setHistoryLimit(100);
     setSearch('');
     setFilter('active');
@@ -210,49 +224,7 @@ function AppContent({ user }: { user: User }) {
         }),
     });
   }
-  function settle(s: Settlement) {
-    if (!ledger) return;
-    const snapshot = ledger;
-    const id = `settle_${snapshot.revision}_${s.payerId}_${s.receiverId}`;
-    const fallback = id.length > 100 ? newRecordId(db!, lid) : id;
-    setConfirm({
-      title: 'Confirm money was paid',
-      body: () =>
-        t(
-          'Record {{amount}} paid by {{payer}} to {{receiver}}? Confirm only after the actual transfer.',
-          {
-            amount: money(s.amount, snapshot.currency),
-            payer: nameOf(snapshot, s.payerId),
-            receiver: nameOf(snapshot, s.receiverId),
-          },
-        ),
-      run: () =>
-        writeFinancial(db!, {
-          ledgerId: lid,
-          id: fallback,
-          actorId: user.uid,
-          expectedVersion: 0,
-          expectedLedgerRevision: snapshot.revision,
-          action: 'settle',
-          data: {
-            kind: 'repayment',
-            description: 'Settlement payment',
-            amount: s.amount,
-            currency: snapshot.currency,
-            date: localDateISO(),
-            payerId: s.payerId,
-            receiverId: s.receiverId,
-            participants: [],
-            shares: {},
-            weights: {},
-            splitMethod: 'equal',
-            notes: 'Confirmed from settlement recommendation',
-            deleted: false,
-            settlementKey: fallback,
-          },
-        }),
-    });
-  }
+  const summary = settlementSummary(plan, user.uid);
   const renderTable = (rows: FinancialRecord[], compact = false) => (
     <div className="table-wrap">
       <table>
@@ -353,13 +325,26 @@ function AppContent({ user }: { user: User }) {
               </small>
             </div>
             <strong className="amount">{money(s.amount, ledger!.currency)}</strong>
-            {!compact && (
+            {!compact && s.payerId === user.uid && (
               <button
                 className="secondary small"
-                disabled={!online || busy}
-                onClick={() => settle(s)}
+                disabled={
+                  !online ||
+                  busy ||
+                  paymentState.loading ||
+                  paymentState.cached ||
+                  !!paymentState.error ||
+                  !ledger!.memberIds.includes(s.receiverId) ||
+                  paymentState.items.some(
+                    (p) =>
+                      p.status === 'pending' &&
+                      p.payerId === s.payerId &&
+                      p.receiverId === s.receiverId,
+                  )
+                }
+                onClick={() => setPayment(s)}
               >
-                {t('Confirm paid')}
+                {t("I've Paid")}
               </button>
             )}
           </div>
@@ -455,7 +440,13 @@ function AppContent({ user }: { user: User }) {
             {t('Just between your people.')}
             <small>{t('Private by design. Clear by nature.')}</small>
           </div>
-          <button className="profile-button" onClick={() => setProfile(true)}>
+          <button
+            className="profile-button"
+            aria-label={t('{{name}} Account & profile', {
+              name: user.displayName || t('Your account'),
+            })}
+            onClick={() => setProfile(true)}
+          >
             <Avatar name={user.displayName || t('You')} />
             <span>
               <strong>{user.displayName || t('Your account')}</strong>
@@ -515,10 +506,16 @@ function AppContent({ user }: { user: User }) {
               <button
                 className="primary"
                 disabled={!online || loading || !!calculationError || !!recordsState.error}
-                onClick={() => setForm({ kind: page === 'balances' ? 'repayment' : 'expense' })}
+                onClick={() =>
+                  page === 'balances'
+                    ? document
+                        .getElementById('payment-confirmations')
+                        ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                    : setForm({ kind: 'expense' })
+                }
               >
                 <Plus size={18} />
-                {page === 'balances' ? t('Record repayment') : t('Add expense')}
+                {page === 'balances' ? t('Review payments') : t('Add expense')}
               </button>
             )}
           </div>
@@ -609,30 +606,36 @@ function AppContent({ user }: { user: User }) {
             <>
               {page === 'dashboard' && (
                 <>
-                  <section className="summary-grid">
-                    <div className="personal-card">
-                      <div className="card-top">
-                        <span>{t('YOUR NET BALANCE')}</span>
-                        <ArrowUpRight size={20} />
+                  <section className="summary-grid payment-summary-grid">
+                    {(['receivables', 'payables'] as const).map((kind) => (
+                      <div
+                        className={'personal-card debt-summary ' + kind}
+                        data-testid={kind}
+                        key={kind}
+                      >
+                        <div className="card-top">
+                          <span>{t(kind === 'receivables' ? 'Receivables' : 'Payables')}</span>
+                          <ArrowUpRight size={20} />
+                        </div>
+                        <div className="big-amount">
+                          {money(summary[kind].amount, ledger.currency)}
+                          <span>{ledger.currency}</span>
+                        </div>
+                        <p>
+                          {t('{{countText}} outstanding payments', {
+                            countText: number(summary[kind].count),
+                            count: summary[kind].count,
+                          })}
+                        </p>
+                        <div className="personal-footer">
+                          {t(
+                            summary[kind].count === 0
+                              ? 'No outstanding recommended transfers.'
+                              : 'Based on current net settlement recommendations.',
+                          )}
+                        </div>
                       </div>
-                      <div className="big-amount">
-                        {money(Math.abs(net[user.uid] || 0), ledger.currency)}
-                        <span>{ledger.currency}</span>
-                      </div>
-                      <p>
-                        {(net[user.uid] || 0) > 0
-                          ? t('You’re owed. We’ll help make things even.')
-                          : (net[user.uid] || 0) < 0
-                            ? t('You owe. A little settling goes a long way.')
-                            : t('You’re all settled up. Nice and easy.')}
-                      </p>
-                      <div className="personal-footer">
-                        <span className="light-dot" />
-                        {(net[user.uid] || 0) >= 0
-                          ? t('A clearer picture, for everyone.')
-                          : t('See your next steps in the settlement plan.')}
-                      </div>
-                    </div>
+                    ))}
                     <div className="stat-card">
                       <span className="stat-icon">
                         <Receipt size={21} />
@@ -831,6 +834,19 @@ function AppContent({ user }: { user: User }) {
                   </section>
                 </>
               )}
+              {(page === 'dashboard' || page === 'balances') && (
+                <PaymentPanel
+                  key={ledger.id}
+                  ledger={ledger}
+                  uid={user.uid}
+                  requests={paymentState.items}
+                  loading={paymentState.loading}
+                  error={paymentState.error}
+                  online={online && !paymentState.cached}
+                  onNotice={notify}
+                  onError={setError}
+                />
+              )}
               {page === 'activity' && (
                 <section className="panel activity-panel">
                   <div className="panel-heading">
@@ -890,14 +906,16 @@ function AppContent({ user }: { user: User }) {
                               <div className="event-foot">
                                 {t('Version') + ' '}
                                 {number(a.version)} · {t(a.after.kind)}
-                                {current && a.version !== current.version && (
-                                  <button
-                                    className="text-link"
-                                    onClick={() => restore(current, a.after)}
-                                  >
-                                    {t('Restore this version')}
-                                  </button>
-                                )}
+                                {current &&
+                                  current.data.kind !== 'repayment' &&
+                                  a.version !== current.version && (
+                                    <button
+                                      className="text-link"
+                                      onClick={() => restore(current, a.after)}
+                                    >
+                                      {t('Restore this version')}
+                                    </button>
+                                  )}
                               </div>
                             </div>
                           </article>
@@ -1042,7 +1060,11 @@ function AppContent({ user }: { user: User }) {
                 {t('View history') + ' '}
                 <ArrowRight size={14} />
               </button>
-              {detailRecord.data.deleted ? (
+              {detailRecord.data.kind === 'repayment' ? (
+                <p className="field-help">
+                  {t('Confirmed repayments are read-only. Their history is preserved.')}
+                </p>
+              ) : detailRecord.data.deleted ? (
                 <button
                   className="primary"
                   onClick={() => restore(detailRecord, detailRecord.data)}
@@ -1065,6 +1087,19 @@ function AppContent({ user }: { user: User }) {
             </div>
           </div>
         </Dialog>
+      )}
+      {payment && ledger && (
+        <PaymentForm
+          key={ledger.id + payment.payerId + payment.receiverId}
+          ledger={ledger}
+          transfer={payment}
+          uid={user.uid}
+          onClose={() => setPayment(null)}
+          onSaved={() => {
+            setPayment(null);
+            notify('Payment reported. Waiting for the recipient to confirm receipt.');
+          }}
+        />
       )}
       {confirm && (
         <Dialog title={t(confirm.title)} onClose={() => setConfirm(null)} busy={busy}>
@@ -1136,6 +1171,7 @@ export function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [profileError, setProfileError] = useState('');
+  const [redirectError, setRedirectError] = useState('');
   const [retry, setRetry] = useState(0);
   useEffect(() => {
     if (!auth || !db) {
@@ -1143,34 +1179,41 @@ export function App() {
       return;
     }
     let generation = 0;
-    const stop = onAuthStateChanged(auth, (u) => {
-      const current = ++generation;
-      setProfileError('');
-      setLoading(true);
-      setUser(null);
-      if (!u) {
-        setLoading(false);
-        return;
-      }
-      // Wait for the Google profile before exposing any ledger UI. Failures stay
-      // visible here even when signInWithPopup has already authenticated the user.
-      void initializeGoogleProfile(db!, u)
-        .then(() => {
-          if (current === generation) {
-            setUser(u);
-            setLoading(false);
-          }
-        })
-        .catch((e) => {
-          if (current === generation) {
-            setProfileError(errorMessage(e));
-            setLoading(false);
-          }
-        });
+    let stop: (() => void) | undefined;
+    let mounted = true;
+    void authRedirectReady.then((problem) => {
+      if (!mounted) return;
+      setRedirectError(problem || '');
+      stop = onAuthStateChanged(auth!, (u) => {
+        const current = ++generation;
+        setProfileError('');
+        setLoading(true);
+        setUser(null);
+        if (!u) {
+          setLoading(false);
+          return;
+        }
+        // Wait for the Google profile before exposing any ledger UI. Failures stay
+        // visible here even when signInWithPopup has already authenticated the user.
+        void initializeGoogleProfile(db!, u)
+          .then(() => {
+            if (current === generation) {
+              setUser(u);
+              setLoading(false);
+            }
+          })
+          .catch((e) => {
+            if (current === generation) {
+              setProfileError(errorMessage(e));
+              setLoading(false);
+            }
+          });
+      });
     });
     return () => {
+      mounted = false;
       generation++;
-      stop();
+      stop?.();
     };
   }, [retry]);
   if (configurationError)
@@ -1220,6 +1263,9 @@ export function App() {
   return user ? (
     <AppContent key={user.uid} user={user} />
   ) : (
-    <AuthScreen invited={new URLSearchParams(window.location.search).has('invite')} />
+    <AuthScreen
+      initialError={redirectError}
+      invited={new URLSearchParams(window.location.search).has('invite')}
+    />
   );
 }

@@ -1,3 +1,5 @@
+import { continueGoogleRedirectBridge, finishGoogleRedirect } from './googleAuth';
+import { errorMessage } from './errors';
 import { bindAuthLanguage } from '../i18n/authLanguage';
 import { initializeApp } from 'firebase/app';
 import {
@@ -31,7 +33,9 @@ export const db = app ? getFirestore(app) : null;
 if (auth) bindAuthLanguage(auth);
 if (auth && db) {
   if (emulator) {
-    connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+    // Vite proxies only emulator Auth routes so redirect helpers share the app
+    // origin, including WebKit's partitioned-storage environment.
+    connectAuthEmulator(auth, window.location.origin, { disableWarnings: true });
     connectFirestoreEmulator(db, '127.0.0.1', 8080);
   }
 }
@@ -44,3 +48,16 @@ export const authPersistence = auth
         'Your browser blocked login storage. Enable site storage or use a supported browser, then reload.',
     )
   : Promise.resolve(null);
+
+// Consume redirect errors before exposing sign-in/profile UI. Auth state and
+// Google profile initialization keep their existing UID-preserving behavior.
+export const authRedirectReady = authPersistence.then(async (problem) => {
+  if (problem || !auth) return problem;
+  try {
+    if (await continueGoogleRedirectBridge(auth)) return null;
+    await finishGoogleRedirect(auth);
+    return null;
+  } catch (error) {
+    return errorMessage(error);
+  }
+});

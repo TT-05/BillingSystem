@@ -85,3 +85,9 @@ API key 修正只更改忽略的 .env.local。原文件值与 Vite 的有效值�
 新邀请只保存服务器 createdAt，有效期由规则与界面统一计算为服务器时间加七天，不再让浏览器时钟影响创建授权。旧 expiresAt 按原值保留，禁止修改或延长。创建事务读取最新账本所有者、名称与货币；邮箱规范化并匹配 token.email.lower()。其余成员、财务、版本和审计约束保持不变。线上旧规则与失败重现证据、回归说明见 [INVITATIONS-I18N.md](INVITATIONS-I18N.md)。
 
 界面采用 i18next/react-i18next，翻译资源随静态站点打包，默认 zh-CN，localStorage 保存选择。显示层使用 Intl，不修改整数金额或财务文档；审计枚举/字段与系统结算文案在显示时翻译，用户输入保留。Firebase Auth languageCode 同步当前语言。部署前需先发布新规则，再发布新 Hosting；本轮不执行部署。
+
+## 双方付款确认与移动浏览器（最新）
+
+仪表盘待收/待付款来自当前净额结算建议，不按原始支出计数。新增 payments、paymentSlots 与 paymentAudit 子集合，不迁移既有财务数据。付款人只能为本人发起待确认申请，收款人确认后同一事务原子写入还款、财务审计、状态审计和账本 revision；拒绝/取消不影响余额。新旧已生效还款在新规则下只读，费用和借款仍可通过新的审计版本纠正。状态机、并发锁、过期策略及 Rules 不独立聚合全账本的信任边界见 [TWO-PARTY-PAYMENTS.md](TWO-PARTY-PAYMENTS.md)。
+
+Google 移动登录使用 redirect，桌面保留 popup 并在被拦截时回退。为避免跨源存储限制，生产回退先进入既有授权的 Firebase Hosting firebaseapp.com 别名，并在暴露任何缓存账户 UI 前消费登录意图。模拟器通过仅开发环境启用的 Vite 同源 Auth 代理复现并验证 WebKit 行为。未改变生产 CSP、授权域或项目配置，没有新增付费服务。

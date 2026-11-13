@@ -145,21 +145,28 @@ export function ledgerWorkflows(language: 'en' | 'zh-CN') {
       second.locator('.member-balance').filter({ hasText: text('Bob (you)') }),
     ).toContainText(text('-$60.00'));
     await page.getByRole('button', { name: text('Balances & settlement'), exact: true }).click();
-    await page.getByRole('button', { name: text('Record repayment'), exact: true }).click();
-    await page.getByLabel(text('Description'), { exact: true }).fill('Partial payback');
-    await page.getByLabel(text('Amount (CAD)'), { exact: true }).fill('20');
+    await expect(page.getByRole('button', { name: text("I've Paid"), exact: true })).toHaveCount(0);
+    await second.getByRole('button', { name: text("I've Paid"), exact: true }).click();
+    await second.getByLabel(text('Amount (CAD)'), { exact: true }).fill('20');
+    await second.getByRole('button', { name: text('Send for confirmation'), exact: true }).click();
+    await expect(
+      second.locator('.member-balance').filter({ hasText: text('Bob (you)') }),
+    ).toContainText(text('-$60.00'));
+    await page.getByRole('button', { name: text('Confirm Receipt'), exact: true }).click();
     await page
-      .getByRole('combobox', { name: text('Paid by'), exact: true })
-      .selectOption({ label: 'Bob' });
-    await page
-      .getByRole('combobox', { name: text('Received by'), exact: true })
-      .selectOption({ label: 'Alice' });
-    await page.getByRole('button', { name: text('Save transaction'), exact: true }).click();
+      .getByRole('dialog')
+      .getByRole('button', { name: text('Confirm'), exact: true })
+      .click();
     await expect(
       second.locator('.member-balance').filter({ hasText: text('Bob (you)') }),
     ).toContainText(text('-$40.00'));
-    await page.getByRole('button', { name: text('Confirm paid'), exact: true }).click();
-    await page.getByRole('button', { name: text('Confirm'), exact: true }).click();
+    await second.getByRole('button', { name: text("I've Paid"), exact: true }).click();
+    await second.getByRole('button', { name: text('Send for confirmation'), exact: true }).click();
+    await page.getByRole('button', { name: text('Confirm Receipt'), exact: true }).click();
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: text('Confirm'), exact: true })
+      .click();
     await expect(second.getByRole('heading', { name: text('All square.') })).toBeVisible();
     await expect(page.getByRole('heading', { name: text('All square.') })).toBeVisible();
     await page.getByRole('button', { name: text('Activity history'), exact: true }).click();
@@ -169,7 +176,7 @@ export function ledgerWorkflows(language: 'en' | 'zh-CN') {
     await expect(page.locator('.timeline-event').filter({ hasText: text('edited') })).toContainText(
       text('$120.00'),
     );
-    await expect(page.getByText(text('confirmed payment for'))).toBeVisible();
+    await expect(page.getByText(text('confirmed payment for')).first()).toBeVisible();
     // Delete and restore an expense: existing repayments remain and balances update on the other browser.
     await page.getByRole('button', { name: text('Expenses'), exact: true }).click();
     await page.getByRole('button', { name: text('View Sunday groceries'), exact: true }).click();
@@ -203,6 +210,7 @@ export function ledgerWorkflows(language: 'en' | 'zh-CN') {
       .getByRole('textbox', { name: text('Search transactions') })
       .fill(text('Settlement payment'));
     await expect(page.locator('.transaction-button strong')).toHaveText([
+      text('Settlement payment'),
       text('Settlement payment'),
     ]);
     await page.getByRole('textbox', { name: text('Search transactions') }).fill('');
@@ -322,17 +330,15 @@ export function ledgerWorkflows(language: 'en' | 'zh-CN') {
     await page.getByLabel(text('Amount (CAD)'), { exact: true }).fill('50');
     await page.getByRole('button', { name: text('Save transaction'), exact: true }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await page.getByRole('button', { name: text('Record repayment'), exact: true }).click();
-    await page.getByLabel(text('Description'), { exact: true }).fill('Paid part back');
-    await page.getByLabel(text('Amount (CAD)'), { exact: true }).fill('30');
+    await friend.getByRole('button', { name: text('Balances & settlement'), exact: true }).click();
+    await friend.getByRole('button', { name: text("I've Paid"), exact: true }).click();
+    await friend.getByLabel(text('Amount (CAD)'), { exact: true }).fill('30');
+    await friend.getByRole('button', { name: text('Send for confirmation'), exact: true }).click();
+    await page.getByRole('button', { name: text('Confirm Receipt'), exact: true }).click();
     await page
-      .getByRole('combobox', { name: text('Paid by'), exact: true })
-      .selectOption({ label: 'Bob' });
-    await page
-      .getByRole('combobox', { name: text('Received by'), exact: true })
-      .selectOption({ label: 'Alice' });
-    await page.getByRole('button', { name: text('Save transaction'), exact: true }).click();
-    await expect(page.getByRole('dialog')).toHaveCount(0);
+      .getByRole('dialog')
+      .getByRole('button', { name: text('Confirm'), exact: true })
+      .click();
     await expect(
       page.locator('.member-balance').filter({ hasText: text('Alice (you)') }),
     ).toContainText(text('+$255.00'));
@@ -345,13 +351,15 @@ export function ledgerWorkflows(language: 'en' | 'zh-CN') {
       .getByRole('combobox', { name: text('Ledger currency'), exact: true })
       .selectOption('USD');
     await page.getByRole('button', { name: text('Create ledger'), exact: true }).click();
-    await expect(page.locator('.personal-card')).toContainText(text('$0.00'));
+    await expect(page.getByTestId('receivables')).toContainText(text('$0.00'));
     await expect(page.locator('.currency-chip')).toHaveText('USD');
     await page.getByRole('combobox', { name: text('Selected ledger') }).selectOption(original);
-    await expect(page.locator('.personal-card')).toContainText(text('$255.00'));
+    await expect(page.getByTestId('receivables')).toContainText(text('$255.00'));
+    await expect(page.getByTestId('payables')).toContainText(text('$0.00'));
     await expect(page.locator('.currency-chip')).toHaveText('CAD');
     await page.reload();
-    await expect(page.locator('.personal-card')).toContainText(text('$255.00'));
+    await expect(page.getByTestId('receivables')).toContainText(text('$255.00'));
+    await expect(page.getByTestId('payables')).toContainText(text('$0.00'));
     await page.context().setOffline(true);
     await expect(page.getByText(text('Offline · changes not saved'))).toBeVisible();
     await expect(

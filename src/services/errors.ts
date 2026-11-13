@@ -24,6 +24,8 @@ export function errorMessage(error: unknown): string {
 
     'auth/user-disabled':
       'This account has been disabled. Contact the ledger owner or Firebase project administrator.',
+    'auth/operation-not-supported-in-this-environment':
+      'Open this site in Safari or Chrome to use Google sign-in, or sign in with email and password.',
     'auth/web-storage-unsupported': 'Enable site storage in your browser to sign in.',
     'auth/operation-not-allowed':
       'This sign-in provider is not enabled. Ask the project administrator to enable it in Firebase Authentication.',
